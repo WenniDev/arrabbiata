@@ -40,7 +40,7 @@ impl std::fmt::Display for Refusal {
             Self::UnknownClearKind(clearkind) => write!(
                 f,
                 "the combo broke, so the lamp must come from clearkind, and {clearkind} is not a value this build knows \
-                 (known: 1 FAILED, 3 CLEAR, 7 FULL COMBO, 8 GREAT FULL COMBO)"
+                 (known: 1 FAILED, 3 CLEAR, 6 LIFE4, 7 FULL COMBO, 8 GREAT FULL COMBO)"
             ),
             Self::LampConflict {
                 from_judgements,
@@ -72,12 +72,14 @@ pub struct Converted {
 /// The `clearkind` values established from captured play.
 ///
 /// This is deliberately not a formula. The two full-combo values alone suggested `clearkind`
-/// was Tachi's lamp index plus three, which a later failed play disproved -- it is 1, not 3.
-/// Anything not listed here is refused.
+/// was Tachi's lamp index plus three, which a later failed play disproved -- it is 1, not 3
+/// -- and LIFE4 landing on 6 rather than 4 rules out any other simple offset. Anything not
+/// listed here is refused.
 fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
     match clearkind {
         1 => Some(Lamp::Failed),
         3 => Some(Lamp::Clear),
+        6 => Some(Lamp::Life4),
         7 => Some(Lamp::FullCombo),
         8 => Some(Lamp::GreatFullCombo),
         _ => None,
@@ -362,6 +364,36 @@ mod tests {
     fn a_broken_combo_with_an_unknown_clearkind_is_refused() {
         let note = Note { clearkind: 5, ..arrabbiata() };
         assert_eq!(convert(&note).err(), Some(Refusal::UnknownClearKind(5)));
+    }
+
+    /// A LIFE4 clear, which the hook refused before its clearkind was known. The payload
+    /// corroborated it twice over: `life` was 4 where every other capture had -1, and
+    /// `opt_gauge` was 2.
+    #[test]
+    fn a_life4_clear_is_recognized() {
+        let note = Note {
+            stagenum: 2,
+            mcode: 38_104,
+            notetype: 3,
+            level: 12,
+            rank: 2,
+            clearkind: 6,
+            score: 909_980,
+            exscore: 1157,
+            maxcombo: 286,
+            judge_marvelous: 242,
+            judge_perfect: 163,
+            judge_great: 105,
+            judge_good: 1,
+            judge_miss: 2,
+            endtime: 1_790_393_709_000,
+            ..Note::default()
+        };
+
+        let converted = convert(&note).expect("should convert");
+        assert_eq!(converted.score.lamp, Lamp::Life4);
+        // (242 + 0) * 3 + 163 * 2 + 105 = 1157
+        assert_eq!(converted.score.optional.ex_score, Some(1157));
     }
 
     #[test]

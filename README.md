@@ -3,10 +3,12 @@
 A hook for **DanceDanceRevolution GRAND PRIX** (Konasute), forked from
 [mikado](https://github.com/adamaq01/mikado) by adamaq01, which does the same job for SOUND VOLTEX.
 
-> **Status: phase 1 of 2.** Right now this only *observes* e-amusement traffic and writes it to
-> disk. It does not submit anything anywhere yet. Score submission to Tachi lands in phase 2,
-> once the dumps have pinned down how GRAND PRIX actually encodes a score — see
-> [Why a dump first](#why-a-dump-first).
+It watches the game's own e-amusement traffic, and submits each stage to Tachi as it is played.
+Nothing is sent until you set an API key.
+
+> **Caveat.** Two `clearkind` values are still unobserved, and how the game encodes Flare has
+> never been seen. A play this build cannot fully account for is **refused and written to disk**
+> rather than submitted on a guess — see [What it refuses](#what-it-refuses).
 
 ## Installation
 
@@ -20,25 +22,51 @@ A hook for **DanceDanceRevolution GRAND PRIX** (Konasute), forked from
    arrabbiata.dll
    ```
 
-4. Start the game. `arrabbiata.toml` is created next to the DLL on first run, and dumps land in
-   `arrabbiata-dumps\` as paired `.json` and `.xml` files.
+4. Start the game once. `arrabbiata.toml` appears in `<game>\game\` — the game's working
+   directory, one level above the DLL.
+5. Put your Tachi API key in it and restart.
 
 Loading goes through [konasute_chainload](https://github.com/Radioo/konasute_chainload), which is
 already how Dynasty (`cluedo.dll`) gets in. Nothing needs to be injected by hand.
 
 ## Configuration
 
-`arrabbiata.toml`, created on first run:
-
 | Key | Meaning |
 | :-- | :-- |
-| `general.enable` | Set to `false` to install no hooks at all |
-| `dump.directory` | Where dumps are written |
-| `dump.write_xml` | Also write the native XML form, which preserves node types |
-| `dump.filter` | Only dump properties containing one of these substrings; empty dumps everything |
-| `dump.max_size` | Properties above this byte count are skipped instead of written |
+| `general.enable` | `false` installs no hooks at all |
+| `general.submit` | `false` watches traffic without sending anything |
+| `tachi.api_key` | Required. Nothing is submitted until it is set. |
+| `tachi.version` | Unset by default; see [Version](#version) |
+| `profiles.<name>` | Extra API keys selected by `refid`, for sharing one install |
+| `dump.all` | Write out every property. This is how the protocol was worked out. |
+| `dump.on_refusal` | Write out a save that could not be turned into a score. Keep this on. |
 
-Leave `filter` empty for discovery. Score payloads are large, so don't lower `max_size`.
+Konasute has no `cardmng`, so a player is identified by the `refid` their own save carries. It
+shows up in the log the first time they play.
+
+## What it refuses
+
+A stage is submitted only when everything about it adds up. Otherwise it is refused, logged with
+the reason, and written to `arrabbiata-dumps\` so it can be diagnosed — a wrong score submitted
+silently is worse than a missing one.
+
+The lamp has to agree with itself. Judgements settle the full-combo tier, since the worst
+judgement present names it; `clearkind` settles everything else, because judgements alone cannot
+separate a fail from a clear. If the two disagree, or the combo broke and `clearkind` is a value
+this build has never seen, the stage is refused.
+
+Also refused: a difficulty or playstyle out of range, a score outside what Tachi accepts, and a
+full combo whose `maxcombo` does not account for its judgements.
+
+Flare is the one metric dropped on purpose. How `playing_flare` encodes a rank has never been
+observed, so a non-zero value warns and the score goes without it rather than being mapped on a
+guess. **If you see that warning, please report the value** — it is all that is needed to add it.
+
+### Version
+
+Tachi has no `grandprix` version for `ddr`, only `a`, `a20`, `a20plus`, `a3`, `konaste` and
+`world`. `tachi.version` is left unset, so Tachi resolves charts across versions rather than
+filing scores under one this fork picked. Set it if you know which you want.
 
 ## The protocol
 
@@ -188,10 +216,11 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 - [x] Phase 1 — dump e-amusement properties to disk
 - [x] Establish the score payload layout from real play
 - [x] Confirm chart matching: `mcode` is Tachi's `inGameID`
-- [ ] Observe the rest of the `clearkind` ladder: fails, plain clears, LIFE4, Perfect and
-      Marvelous full combos
-- [ ] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
+- [x] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
       validate rather than submitting a guess
+- [ ] Observe the two remaining `clearkind` values: an assisted clear and a LIFE4 clear
+- [ ] Map Flare: needs one play at a non-zero Flare rank
+- [ ] Confirm whether `meta.version` should be set, against a real import
 
 There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and
 `ddrcode`, so profiles are keyed off those rather than off an E000 card number as upstream does.

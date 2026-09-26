@@ -6,10 +6,7 @@ use anyhow::Result;
 use log::{error, info, warn};
 
 use crate::CONFIGURATION;
-use crate::sys::{
-    NodeType, property_clear_error, property_mem_write, property_node_refer, property_query_size,
-    property_search, property_set_flag,
-};
+use crate::sys::{property_mem_write, property_query_size, property_set_flag};
 
 /// AVS picks a property's serialization from flags held on the property itself. Setting
 /// 0x800 while clearing 0x008 switches the output from the native kbin form to JSON, which
@@ -18,31 +15,10 @@ use crate::sys::{
 const FLAG_JSON: u32 = 0x800;
 const FLAG_KBIN: u32 = 0x008;
 
-/// Service names probed only so dump files get a readable name. Discovery does not depend
-/// on this list being right or complete: when nothing matches, the dump is still written
-/// and the real service name is plainly visible in its contents.
-const KNOWN_SERVICES: &[&str] = &[
-    "playerdata",
-    "usergamedata",
-    "game",
-    "cardmng",
-    "player",
-    "local",
-    "local2",
-    "info",
-    "system",
-    "eacoin",
-    "facility",
-    "package",
-    "message",
-    "pcbtracker",
-    "pcbevent",
-    "dlstatus",
-    "lobby",
-    "matching",
-    "userdata",
-    "traceroute",
-];
+/// Envelope fields lifted into dump filenames. GRAND PRIX wraps its traffic in an `eacnet`
+/// envelope where these are plain string elements -- `eacnet/request/service` and so on --
+/// rather than the `method@` attributes the arcade `call` envelope uses.
+const LABEL_FIELDS: &[&str] = &["service", "method", "mode"];
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static SEEN_DESTROY: AtomicU64 = AtomicU64::new(0);
@@ -50,8 +26,7 @@ static SEEN_WRITE: AtomicU64 = AtomicU64::new(0);
 static SKIPPED_DUPLICATE: AtomicU64 = AtomicU64::new(0);
 
 /// Hash of the last property written out, so a property AVS serializes more than once --
-/// typically a `property_query_size` sizing pass followed by the real write -- does not
-/// land on disk twice.
+/// typically a sizing pass followed by the real write -- does not land on disk twice.
 static LAST_HASH: Mutex<Option<u64>> = Mutex::new(None);
 
 thread_local! {
@@ -159,57 +134,6 @@ unsafe fn capture(property: *mut (), source: &str) {
     CAPTURING.with(|flag| flag.set(false));
 }
 
-/// Best-effort service and method names, used only to label the dump file.
-///
-/// A failed `property_search` leaves an error recorded on the property, so every miss is
-/// cleared before moving on -- otherwise the game would later see a property AVS considers
-/// to be in an error state.
-unsafe fn identify(property: *mut (), root: &str) -> (Option<String>, Option<String>) {
-    unsafe {
-        for &service in KNOWN_SERVICES {
-            let path = format!("/{root}/{service}\0");
-            let node = property_search(property, std::ptr::null(), path.as_ptr());
-            if node.is_null() {
-                property_clear_error(property);
-                continue;
-            }
-
-            return (
-                Some(service.to_string()),
-                read_attribute(property, node, b"method@\0"),
-            );
-        }
-    }
-
-    (None, None)
-}
-
-unsafe fn read_attribute(property: *mut (), node: *const (), attribute: &[u8]) -> Option<String> {
-    let mut buffer = [0u8; 256];
-    let result = unsafe {
-        property_node_refer(
-            property,
-            node,
-            attribute.as_ptr(),
-            NodeType::NodeAttr,
-            buffer.as_mut_ptr() as *mut (),
-            buffer.len() as u32,
-        )
-    };
-    if result < 0 {
-        unsafe { property_clear_error(property) };
-        return None;
-    }
-
-    let end = buffer
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(buffer.len());
-    let value = String::from_utf8_lossy(&buffer[..end]).to_string();
-
-    (!value.is_empty()).then_some(value)
-}
-
 /// Serializes the property, either as JSON or in its native kbin form.
 ///
 /// Returns `None` rather than an error when AVS refuses: a property we cannot read is not
@@ -256,15 +180,36 @@ unsafe fn serialize(property: *mut (), json: bool) -> Option<Vec<u8>> {
     }
 }
 
-/// The name of the property's outermost node, read straight off the JSON rather than by
-/// walking nodes, so a root this fork has never heard of still gets named correctly.
-fn root_name(json: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(json).ok()?;
+/// The name of the property's outermost node, read off the JSON rather than by walking
+/// nodes, so a root this fork has never heard of is still named correctly.
+fn root_name(text: &str) -> Option<String> {
     let start = text.find('"')? + 1;
     let end = text[start..].find('"')? + start;
     let name = &text[start..end];
 
     (!name.is_empty() && name.len() < 64).then(|| name.to_string())
+}
+
+/// Reads `"key" : "value"` out of AVS's JSON output.
+///
+/// Going through the text rather than a second pass over the property API keeps this honest
+/// about what actually got dumped, and sidesteps addressing a node by absolute path.
+fn json_field(text: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let after = &text[text.find(&needle)? + needle.len()..];
+
+    // Only accept a string value belonging to this key: a quote must come after the colon
+    // and before the line ends, otherwise this key held an object, a number or nothing.
+    let colon = after.find(':')?;
+    let value = &after[colon + 1..];
+    let line_end = value.find('\n').unwrap_or(value.len());
+    let start = value.find('"')? + 1;
+    if start > line_end {
+        return None;
+    }
+    let end = value[start..].find('"')? + start;
+
+    (end > start).then(|| value[start..end].to_string())
 }
 
 fn hash(bytes: &[u8]) -> u64 {
@@ -289,7 +234,8 @@ unsafe fn dump(property: *mut (), source: &str) -> Result<()> {
         return Ok(());
     };
 
-    let root = root_name(readable);
+    let text = String::from_utf8_lossy(readable);
+    let root = root_name(&text);
 
     // An empty roots list keeps everything, which is what a discovery run wants. Once the
     // interesting root is known, naming it here cuts the noise without a rebuild.
@@ -304,15 +250,9 @@ unsafe fn dump(property: *mut (), source: &str) -> Result<()> {
 
     // The content filter matches the serialized form, so a user can narrow to a service or
     // method by name without knowing how the payload is structured.
-    if !config.filter.is_empty() {
-        let haystack = String::from_utf8_lossy(readable);
-        if !config
-            .filter
-            .iter()
-            .any(|needle| haystack.contains(needle.as_str()))
-        {
-            return Ok(());
-        }
+    if !config.filter.is_empty() && !config.filter.iter().any(|needle| text.contains(needle.as_str()))
+    {
+        return Ok(());
     }
 
     // AVS commonly serializes the same property twice in a row, once to size the buffer and
@@ -327,24 +267,16 @@ unsafe fn dump(property: *mut (), source: &str) -> Result<()> {
         *last = Some(digest);
     }
 
-    let bytes = readable.len();
-    let (service, method) = match &root {
-        Some(root) => unsafe { identify(property, root) },
-        None => (None, None),
-    };
+    let mut parts = vec![source.to_string()];
+    parts.extend(root.clone());
+    parts.extend(LABEL_FIELDS.iter().filter_map(|key| json_field(&text, key)));
+    let label = parts
+        .into_iter()
+        .map(sanitize)
+        .collect::<Vec<_>>()
+        .join("-");
 
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let label = [
-        Some(source.to_string()),
-        root.clone(),
-        service.clone(),
-        method.clone(),
-    ]
-    .into_iter()
-    .flatten()
-    .map(sanitize)
-    .collect::<Vec<_>>()
-    .join("-");
     let stem = format!(
         "{sequence:05}_{}_{label}",
         chrono::Local::now().format("%H%M%S%.3f")
@@ -364,13 +296,8 @@ unsafe fn dump(property: *mut (), source: &str) -> Result<()> {
     }
 
     info!(
-        "Dumped {} ({bytes} bytes) -> {}",
-        match (&root, &service, &method) {
-            (Some(root), Some(service), Some(method)) => format!("{root}/{service}.{method}"),
-            (Some(root), Some(service), None) => format!("{root}/{service}"),
-            (Some(root), None, _) => format!("{root} (unrecognized service)"),
-            _ => "an unnamed property".to_string(),
-        },
+        "Dumped {label} ({} bytes) -> {}",
+        readable.len(),
         files.join(", ")
     );
 
@@ -388,4 +315,74 @@ fn sanitize(value: String) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{json_field, root_name, sanitize};
+
+    /// Shaped like AVS's own JSON output, down to the spaces around the colons.
+    const SAVE: &str = r#"{
+  "eacnet" : {
+    "request" : {
+      "service" : "playerdata_2",
+      "module" : "playerdata_2",
+      "method" : "usergamedata_advanced",
+      "data" : {
+        "client_key" : "",
+        "data" : {
+          "mode" : "usersave",
+          "refid" : "ABCD0123",
+          "datanum" : 4
+        }
+      }
+    }
+  }
+}"#;
+
+    #[test]
+    fn reads_the_outermost_node_name() {
+        assert_eq!(root_name(SAVE).as_deref(), Some("eacnet"));
+    }
+
+    #[test]
+    fn reads_envelope_fields() {
+        assert_eq!(json_field(SAVE, "service").as_deref(), Some("playerdata_2"));
+        assert_eq!(
+            json_field(SAVE, "method").as_deref(),
+            Some("usergamedata_advanced")
+        );
+        assert_eq!(json_field(SAVE, "mode").as_deref(), Some("usersave"));
+    }
+
+    #[test]
+    fn ignores_keys_that_do_not_hold_a_string() {
+        // A number, and an object whose first string belongs to a nested key.
+        assert_eq!(json_field(SAVE, "datanum"), None);
+        assert_eq!(json_field(SAVE, "request"), None);
+    }
+
+    #[test]
+    fn does_not_match_a_longer_key_that_starts_the_same() {
+        assert_eq!(json_field(r#"{"service_id" : "x"}"#, "service"), None);
+    }
+
+    #[test]
+    fn treats_an_empty_string_value_as_absent() {
+        assert_eq!(json_field(SAVE, "client_key"), None);
+    }
+
+    #[test]
+    fn missing_keys_and_malformed_input_do_not_panic() {
+        assert_eq!(json_field(SAVE, "nonexistent"), None);
+        assert_eq!(json_field("", "service"), None);
+        assert_eq!(root_name(""), None);
+        assert_eq!(root_name("{"), None);
+    }
+
+    #[test]
+    fn filenames_keep_only_safe_characters() {
+        assert_eq!(sanitize("playerdata_2".into()), "playerdata_2");
+        assert_eq!(sanitize("a/b\\c:d".into()), "a_b_c_d");
+    }
 }

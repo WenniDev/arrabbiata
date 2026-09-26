@@ -40,6 +40,33 @@ already how other DLLs get in. Nothing needs to be injected by hand.
 
 Leave `filter` empty for discovery. Score payloads are large, so don't lower `max_size`.
 
+## The protocol
+
+GRAND PRIX wraps its traffic in an **`eacnet`** envelope, not the `call` wrapper arcade titles
+use. Service and method are plain string elements rather than attributes:
+
+```
+eacnet/request/{ service, module, method, data/{ client_key, info/version, data/{ ... } } }
+```
+
+Three requests matter, as mapped out from a server's DDR implementation and its
+request schemas:
+
+| Request | Carries |
+| :-- | :-- |
+| `log_2.save` | Per-stage play metadata: `mcode`, `notetype`, `playstyle`, `playside`, `stagenum`. No score. |
+| `playerdata_2.usergamedata_send` | Profile records `COMMON`, `OPTION`, `LAST`, `RIVAL` |
+| `playerdata_2.usergamedata_advanced`, mode `usersave` | **The scores.** Structure undocumented. |
+
+`usergamedata_send` records are Base64-encoded UTF-8 CSV inside `<d>` elements. Each row starts
+with a 64-bit hex bitmask, then a type name, then the fields: set bits in the mask give the
+column indices the fields land in, so a row is a sparse update of a 64-column record rather than
+a fixed layout.
+
+The score payload under `usersave` is the one piece nothing documents -- the server handler is a
+stub that acknowledges the request and discards it, and its schema leaves the body as `xs:any`.
+Establishing that layout is what this dump exists for.
+
 ## Why a dump first
 
 GRAND PRIX does not encode scores the way SOUND VOLTEX does, so mikado's parsing layer could not

@@ -40,7 +40,7 @@ impl std::fmt::Display for Refusal {
             Self::UnknownClearKind(clearkind) => write!(
                 f,
                 "the combo broke, so the lamp must come from clearkind, and {clearkind} is not a value this build knows \
-                 (known: 1 FAILED, 3 CLEAR, 6 LIFE4, 7 FULL COMBO, 8 GREAT FULL COMBO)"
+                 (known: 1 FAILED, 2 ASSIST, 3 CLEAR, 6 LIFE4, 7 FULL COMBO, 8 GREAT FULL COMBO)"
             ),
             Self::LampConflict {
                 from_judgements,
@@ -78,6 +78,7 @@ pub struct Converted {
 fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
     match clearkind {
         1 => Some(Lamp::Failed),
+        2 => Some(Lamp::Assist),
         3 => Some(Lamp::Clear),
         6 => Some(Lamp::Life4),
         7 => Some(Lamp::FullCombo),
@@ -364,6 +365,38 @@ mod tests {
     fn a_broken_combo_with_an_unknown_clearkind_is_refused() {
         let note = Note { clearkind: 5, ..arrabbiata() };
         assert_eq!(convert(&note).err(), Some(Refusal::UnknownClearKind(5)));
+    }
+
+    /// An assisted clear, refused until its clearkind was known. The payload said what it
+    /// was: `opt_cut`, `opt_freeze` and `opt_jump` all 1 where every other capture had 0 --
+    /// CUT drops notes, and turning off jumps and freezes simplifies the chart -- while
+    /// `opt_gauge` was 0 and `life` -1, so it was the assists and not the gauge.
+    #[test]
+    fn an_assisted_clear_is_recognized() {
+        let note = Note {
+            stagenum: 1,
+            mcode: 37_498,
+            notetype: 4,
+            level: 17,
+            rank: 14,
+            clearkind: 2,
+            score: 547_630,
+            exscore: 784,
+            maxcombo: 179,
+            judge_marvelous: 187,
+            judge_perfect: 87,
+            judge_great: 49,
+            judge_good: 1,
+            judge_miss: 1,
+            endtime: 1_790_394_757_034,
+            ..Note::default()
+        };
+
+        let converted = convert(&note).expect("should convert");
+        assert_eq!(converted.score.lamp, Lamp::Assist);
+        assert_eq!(converted.score.difficulty, "CHALLENGE");
+        // (187 + 0) * 3 + 87 * 2 + 49 = 784
+        assert_eq!(converted.score.optional.ex_score, Some(784));
     }
 
     /// A LIFE4 clear, which the hook refused before its clearkind was known. The payload

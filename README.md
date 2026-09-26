@@ -137,10 +137,23 @@ Three things about it shape how phase 2 has to work:
 | Abyss, EXPERT, 10 | `mcode` 257, `basename` "abys", `notetype` 3, `level` 10 | `inGameID` 257, "abys", EXPERT is 10 |
 | Tohoku EVOLVED, CHALLENGE, 18 | `mcode` 37789, `basename` "toho1", `notetype` 4, `level` 18 | `inGameID` 37789, "toho1", CHALLENGE is 18 |
 
-So `matchType` is `inGameID`, and `notetype` follows Tachi's own difficulty order: 0 BEGINNER,
-1 BASIC, 2 DIFFICULT, 3 EXPERT, 4 CHALLENGE -- all confirmed by play except BASIC, which follows
-from the ordering. `playstyle` 0 is SINGLE. Songs as recent as Arrabbiata are already in Tachi's
-seeds, so GRAND PRIX's library being ahead of them has not been a problem so far.
+So `matchType` is `inGameID`.
+
+`notetype` names the chart: **both** how it is played and how hard it is. It runs straight
+through singles into doubles rather than restarting, and doubles has no BEGINNER, so the ladder
+is nine values:
+
+| 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| SP BEGINNER | SP BASIC | SP DIFFICULT | SP EXPERT | SP CHALLENGE | DP BASIC | DP DIFFICULT | DP EXPERT | DP CHALLENGE |
+
+Reading it as a difficulty on its own happens to work for singles and shifts everything by one
+for doubles. A doubles play settled it: notetype 5 arrived with `level` 3, and DP BASIC is level 3
+in Tachi's seeds where SP BASIC is 2. `playstyle` says the same thing a second time — 0 singles,
+1 doubles — and is required to agree.
+
+Songs as recent as Arrabbiata are already in Tachi's seeds, so GRAND PRIX's library being ahead of
+them has not been a problem so far.
 
 Judgements map one to one, and EX score checks out against them: Marvelous and O.K. are worth 3,
 Perfect 2, Great 1. Every capture satisfies it, which is a useful sanity check on a parse.
@@ -245,6 +258,7 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
       validate rather than submitting a guess
 - [x] Map Flare: `playing_flare` indexes Tachi's ladder directly
 - [x] Observe the common `clearkind` ladder: FAILED, ASSIST, CLEAR, LIFE4 and the full combos
+- [x] Confirm doubles: `notetype` names the playstyle too
 - [ ] Confirm whether `meta.version` should be set, against a real import
 
 There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and

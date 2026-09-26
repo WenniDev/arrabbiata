@@ -13,13 +13,14 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 
 - Download the latest release from the [releases page](https://github.com/WenniDev/arrabbiata/releases/latest)
 - Put it in your game's `game\modules` folder, next to `avs2-core.dll`
-- Add a line for it at the end of `chainload.txt`
-- Start the game once, then set your API key in the config file
+- When you start the game, inject the DLL into the process
+- Set your API key in the config file, then restart
 
 ## Tips
 
 - The configuration file is created in the `game` folder at startup if it doesn't already exist
 - Your Tachi API key needs the `submit_score` permission
+- An injector that loads DLLs at startup saves doing it by hand every time
 - Set `enable` to `false` in `arrabbiata.toml` to turn the hook off without removing it
 
 ## License

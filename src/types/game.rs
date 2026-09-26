@@ -106,10 +106,9 @@ pub struct Note {
     /// check that a parse landed on the right chart.
     #[serde(default)]
     pub level: i32,
-    /// The grade, indexing Tachi's grade list descending: 0 AAA, 15 E. Unused -- Tachi
-    /// derives grade from score -- but kept for cross-checking.
-    #[serde(default)]
-    pub rank: i32,
+    // `rank` is also present: the grade, indexing Tachi's grade list descending from 0 AAA
+    // to 15 E. Not modelled, because Tachi derives grade from score and a failed play sends
+    // 15 regardless of what it scored, which makes it a poor cross-check. See the README.
     #[serde(default)]
     pub clearkind: i32,
     #[serde(default)]

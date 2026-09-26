@@ -366,14 +366,14 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
     }
 
     let summary = format!(
-        "{} {} on {} {} {} (mcode {}, rank {})",
+        "{} {} on {} {} {} {} (mcode {})",
         import.scores[0].lamp,
         import.scores[0].score,
         note.basename,
+        import.meta.playtype,
         import.scores[0].difficulty,
         note.level,
-        note.mcode,
-        note.rank
+        note.mcode
     );
     let Some(api_key) = api_key.filter(|_| CONFIGURATION.general.submit) else {
         DRY_RUN.fetch_add(1, Ordering::Relaxed);

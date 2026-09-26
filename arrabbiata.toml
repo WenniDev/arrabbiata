@@ -3,17 +3,31 @@
 enable = true
 
 [dump]
-# Where intercepted e-amusement properties are written, relative to the game
-# executable unless an absolute path is given
+# Where intercepted properties are written. Note this is relative to the game's working
+# directory, which is the 'game' folder -- one level above 'game\modules' where the DLL
+# itself lives.
 directory = 'arrabbiata-dumps'
-# Also write the native (XML) serialization next to the JSON one. The JSON form is
-# far easier to read; the XML one preserves node types, which matters when working
-# out how a payload is actually encoded.
-write_xml = true
-# Only dump properties whose serialized form contains one of these substrings.
-# Leave empty to dump everything -- which is what you want for discovery.
-# Example: filter = ['playerdata', 'cardmng']
+
+# Which hooks to install.
+#   on_destroy -- property_destroy, which AVS calls as a property is torn down
+#   on_write   -- property_mem_write, the serialization path a request takes on its way out
+# on_write is the one that catches outgoing traffic; on_destroy on its own was found to see
+# only a handful of properties per session.
+on_destroy = true
+on_write = true
+
+# Also write the native kbin form beside the JSON one. It is binary and not readable, so it
+# is only worth turning on when node types matter.
+write_kbin = false
+
+# Keep only properties whose outermost node has one of these names, e.g. ['call'] for
+# requests only. Empty keeps everything, which is what a discovery run wants.
+roots = []
+
+# Keep only properties whose serialized form contains one of these substrings. Empty keeps
+# everything. Example: filter = ['playerdata', 'usergamedata']
 filter = []
-# Properties larger than this (in bytes) are skipped rather than written out, so a
-# runaway payload cannot fill the disk. Score payloads are large; do not set this low.
+
+# Properties larger than this (in bytes) are skipped rather than written out, so a runaway
+# payload cannot fill the disk. Score payloads are large; do not set this low.
 max_size = 16777216

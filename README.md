@@ -99,23 +99,38 @@ Three things about it shape how phase 2 has to work:
 
 | Played | Game sent | Tachi seed |
 | :-- | :-- | :-- |
-| AFRONOVA, BEGINNER, level 5 | `mcode` 124, `basename` "afro", `notetype` 0, `level` 5 | `inGameID` 124, `basename` "afro", BEGINNER is level 5 |
-| Abyss, EXPERT, level 10 | `mcode` 257, `basename` "abys", `notetype` 3, `level` 10 | `inGameID` 257, `basename` "abys", EXPERT is level 10 |
+| AFRONOVA, BEGINNER, 5 | `mcode` 124, `basename` "afro", `notetype` 0, `level` 5 | `inGameID` 124, "afro", BEGINNER is 5 |
+| Arrabbiata, DIFFICULT, 13 | `mcode` 37270, `basename` "arra", `notetype` 2, `level` 13 | `inGameID` 37270, "arra", DIFFICULT is 13 |
+| Abyss, EXPERT, 10 | `mcode` 257, `basename` "abys", `notetype` 3, `level` 10 | `inGameID` 257, "abys", EXPERT is 10 |
+| Tohoku EVOLVED, CHALLENGE, 18 | `mcode` 37789, `basename` "toho1", `notetype` 4, `level` 18 | `inGameID` 37789, "toho1", CHALLENGE is 18 |
 
 So `matchType` is `inGameID`, and `notetype` follows Tachi's own difficulty order: 0 BEGINNER,
-1 BASIC, 2 DIFFICULT, 3 EXPERT, 4 CHALLENGE -- with 0 and 3 confirmed by play and the rest
-following from the ordering. `playstyle` 0 is SINGLE.
+1 BASIC, 2 DIFFICULT, 3 EXPERT, 4 CHALLENGE -- all confirmed by play except BASIC, which follows
+from the ordering. `playstyle` 0 is SINGLE. Songs as recent as Arrabbiata are already in Tachi's
+seeds, so GRAND PRIX's library being ahead of them has not been a problem so far.
 
 Judgements map one to one, and EX score checks out against them: Marvelous and O.K. are worth 3,
 Perfect 2, Great 1. Both captures satisfy it, which is a useful sanity check on a parse.
 
-`clearkind` is a ladder, only partly known: **7** is a Good Full Combo and **8** a Great Full
-Combo. Values for fails, plain clears, LIFE4, and Perfect and Marvelous full combos have not been
-observed yet. Until they are, an unrecognized `clearkind` must be refused rather than guessed
-into a lamp.
+Misses land in `judge_miss`. `judge_boo` and `judge_ng` stayed zero even on a play with eleven
+misses and a failed-out play with seventeen, so they map to nothing on Tachi's side.
 
-`rank` holds the grade, but its ladder is unmapped -- both captures graded AA+ and both sent 1.
-It is not needed: Tachi derives grade from score.
+`clearkind` is a ladder, observed at four points:
+
+| Value | Lamp | Seen on |
+| :-- | :-- | :-- |
+| 1 | `FAILED` | score 0, 17 misses, bailed out |
+| 3 | `CLEAR` | 877,490 with 11 misses |
+| 7 | `FULL COMBO` | 1 good, no misses |
+| 8 | `GREAT FULL COMBO` | no goods, 5 greats, no misses |
+
+2, 4, 5, 6 and anything above 8 remain unobserved, so an unrecognized value is refused rather
+than guessed into a lamp. Note that `clearkind` is *not* Tachi's lamp index offset by a constant
+-- that was the obvious guess from the two full-combo values, and the failed play disproved it.
+
+`rank` is the grade as an index into Tachi's own grade list, descending: 0 is AAA, 1 AA+, 4 A+,
+15 E. Confirmed on four plays. It is not needed -- Tachi derives grade from score -- but it makes
+a free cross-check on a parse.
 
 ## Why a dump first
 

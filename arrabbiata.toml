@@ -1,59 +1,29 @@
 [general]
-# Set to 'false' to disable the hook entirely
-enable = true
-# Set to 'false' to watch traffic without sending anything anywhere
-submit = true
-# Timeout for requests to Tachi, in milliseconds
-timeout = 3000
+enable = true        # false installs no hooks at all
+submit = true        # false works each score out and prints it, but sends nothing
+timeout = 3000       # ms
 
 [tachi]
-# Tachi instance base URL. Use kamai.tachi.ac rather than the older kamaitachi.xyz: that
-# one answers with a redirect to this host, and a cross-host redirect drops the
-# Authorization header, so submission would fail to authenticate.
+# kamai.tachi.ac, not kamaitachi.xyz: that one redirects, and a cross-host redirect drops the
+# Authorization header.
 base_url = 'https://kamai.tachi.ac/'
-# Score import endpoint
 import = '/ir/direct-manual/import'
-# Your Tachi API key. Nothing is submitted until this is set.
-api_key = ''
-# Tachi has no 'grandprix' version for ddr -- only a, a20, a20plus, a3, konaste and world.
-# Leaving this unset lets Tachi resolve charts across versions rather than filing your
-# scores under a version that was guessed at. Set it only if you know which one you want.
-# version = 'konaste'
+api_key = ''         # required, and needs the submit_score permission
+# version = 'konaste'  # unset lets Tachi match charts across versions
 
-# Extra API keys selected by refid, for sharing one install between players. Konasute has no
-# cardmng, so a player is identified by the refid their own save carries -- it shows up in
-# the log the first time they play, and in any dump.
+# Extra keys per player, for a shared install. A refid appears in the log on that player's
+# first save.
 # [profiles.'someone-else']
 # refids = ['0000001346040870']
 # api_key = 'their-key-here'
 
 [dump]
-# Where payloads are written, relative to the game's working directory -- the 'game' folder,
-# one level above 'game\modules' where the DLL lives.
-directory = 'arrabbiata-dumps'
-
-# Write out every property the hooks see. Leave it off for normal play; turn it on if a game
-# update breaks something.
-all = false
-
-# Always write out a save that could not be turned into a score. Keep this on: it is what
-# turns an unhandled case into something diagnosable instead of a score silently lost.
-on_refusal = true
-
-# Which hooks to install. property_mem_write is the one that catches outgoing saves;
-# property_destroy is only useful for discovery.
+directory = 'arrabbiata-dumps'  # relative to the game's working directory, <game>\game\
+on_refusal = true    # keep this on: a save that made no sense is kept instead of lost
+all = false          # dump every property; for working out what a game update changed
 on_destroy = true
-on_write = true
-
-# Also write the native kbin form. Binary and unreadable, only worth it when node types
-# matter. Applies to 'all' dumps.
-write_kbin = false
-
-# Narrow 'all' dumps by outermost node name, e.g. ['eacnet'], or by content substring.
-# Empty keeps everything.
-roots = []
-filter = []
-
-# Properties larger than this are skipped rather than written out. Score payloads are large;
-# do not set this low.
-max_size = 16777216
+on_write = true      # the one that catches outgoing saves
+write_kbin = false   # native binary form, beside the JSON
+roots = []           # keep only these outermost nodes, e.g. ['eacnet']; empty keeps all
+filter = []          # keep only payloads containing one of these; empty keeps all
+max_size = 16777216  # skip anything larger

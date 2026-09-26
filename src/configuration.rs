@@ -166,3 +166,29 @@ fn default_directory() -> PathBuf {
 fn default_max_size() -> usize {
     16 * 1024 * 1024
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Configuration;
+
+    /// The default config ships inside the DLL through `include_bytes!`, so a typo in it
+    /// surfaces only when a player starts the game.
+    #[test]
+    fn the_shipped_default_parses() {
+        let path = std::env::temp_dir().join("arrabbiata-shipped-default.toml");
+        std::fs::write(&path, include_bytes!("../arrabbiata.toml")).unwrap();
+
+        let config: Configuration = confy::load_path(&path).expect("shipped default should parse");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(config.general.enable);
+        assert!(config.general.submit);
+        assert_eq!(config.tachi.base_url, "https://kamai.tachi.ac/");
+        // Out of the box there is no key, so nothing is submitted.
+        assert_eq!(config.api_key_for("0000001346040870"), None);
+        // Unset, so Tachi matches charts across versions.
+        assert_eq!(config.tachi.version, None);
+        assert!(config.dump.on_refusal);
+        assert!(!config.dump.all);
+    }
+}

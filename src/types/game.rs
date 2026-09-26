@@ -166,9 +166,8 @@ impl Note {
         self.judge_miss + self.judge_boo + self.judge_ng
     }
 
-    /// Judgements that make up a combo. Whether `judge_ok` counts has not been observed --
-    /// no captured full combo had shock or freeze arrows -- so callers treat the two sums
-    /// as the bounds of an acceptable `maxcombo`.
+    /// Judgements that make up a combo. `judge_ok` is not among them: a captured full combo
+    /// with 21 O.K. judgements reported a `maxcombo` matching the others exactly.
     pub fn combo_notes(&self) -> i64 {
         self.judge_marvelous + self.judge_perfect + self.judge_great + self.judge_good
     }

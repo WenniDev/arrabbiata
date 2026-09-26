@@ -22,11 +22,7 @@ pub enum Refusal {
         clearkind: i32,
     },
     /// A full combo whose `maxcombo` does not account for the notes hit.
-    ComboMismatch {
-        maxcombo: i64,
-        expected_min: i64,
-        expected_max: i64,
-    },
+    ComboMismatch { maxcombo: i64, expected: i64 },
 }
 
 impl std::fmt::Display for Refusal {
@@ -60,13 +56,9 @@ impl std::fmt::Display for Refusal {
                     "the combo broke, but clearkind {clearkind} claims {from_clearkind}"
                 ),
             },
-            Self::ComboMismatch {
-                maxcombo,
-                expected_min,
-                expected_max,
-            } => write!(
+            Self::ComboMismatch { maxcombo, expected } => write!(
                 f,
-                "a full combo with maxcombo {maxcombo}, which is outside the {expected_min} to {expected_max} its judgements account for"
+                "a full combo with maxcombo {maxcombo}, where its judgements account for {expected}"
             ),
         }
     }
@@ -159,17 +151,15 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
 
     let lamp = lamp(note)?;
 
-    // A full combo means every note in the chart was part of the combo, so maxcombo has to
-    // account for the judgements. Whether O.K. counts towards a combo has never been
-    // observed, so both readings are accepted rather than risk refusing a real score.
+    // A full combo means every note was part of the combo, so maxcombo has to equal the
+    // judgements that make one up. O.K. is not among them: a captured full combo with 21 of
+    // them had a maxcombo matching the other judgements exactly.
     if lamp.is_full_combo() {
-        let expected_min = note.combo_notes();
-        let expected_max = expected_min + note.judge_ok;
-        if note.maxcombo < expected_min || note.maxcombo > expected_max {
+        let expected = note.combo_notes();
+        if note.maxcombo != expected {
             return Err(Refusal::ComboMismatch {
                 maxcombo: note.maxcombo,
-                expected_min,
-                expected_max,
+                expected,
             });
         }
     }
@@ -380,16 +370,44 @@ mod tests {
         assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
     }
 
+    /// Bad Maniacs, DIFFICULT 13: a Great Full Combo with 21 O.K. judgements whose maxcombo
+    /// matched the other judgements exactly. This is what established that O.K. does not
+    /// count towards a combo, and it also exercises O.K. being worth 3 in the EX score:
+    /// (303 + 21) * 3 + 96 * 2 + 18 = 1182.
     #[test]
-    fn a_full_combo_may_or_may_not_count_ok_judgements_towards_its_combo() {
-        // Whether O.K. counts is unobserved, so both readings are accepted.
-        let base = Note { judge_ok: 4, ..afronova() };
-        for maxcombo in [base.combo_notes(), base.combo_notes() + 4] {
-            assert!(convert(&Note { maxcombo, ..base.clone() }).is_ok());
-        }
-        // One beyond the generous reading is still refused.
-        let note = Note { maxcombo: base.combo_notes() + 5, ..base };
-        assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
+    fn ok_judgements_do_not_count_towards_a_combo() {
+        let note = Note {
+            stagenum: 1,
+            mcode: 38_753,
+            notetype: 2,
+            level: 13,
+            rank: 1,
+            clearkind: 8,
+            score: 982_420,
+            exscore: 1182,
+            maxcombo: 417,
+            fastcount: 41,
+            slowcount: 73,
+            judge_marvelous: 303,
+            judge_perfect: 96,
+            judge_great: 18,
+            judge_ok: 21,
+            endtime: 1_790_391_772_617,
+            ..Note::default()
+        };
+
+        assert_eq!(note.combo_notes(), 417, "O.K. is not part of a combo");
+        let converted = convert(&note).expect("should convert");
+        assert_eq!(converted.score.lamp, Lamp::GreatFullCombo);
+        assert_eq!(converted.score.optional.ex_score, Some(1182));
+
+        // Counting O.K. towards the combo would have put maxcombo at 438, which is now
+        // refused rather than quietly tolerated.
+        let note = Note { maxcombo: 438, ..note };
+        assert_eq!(
+            convert(&note).err(),
+            Some(Refusal::ComboMismatch { maxcombo: 438, expected: 417 })
+        );
     }
 
     #[test]

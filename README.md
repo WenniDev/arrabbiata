@@ -138,7 +138,11 @@ from the ordering. `playstyle` 0 is SINGLE. Songs as recent as Arrabbiata are al
 seeds, so GRAND PRIX's library being ahead of them has not been a problem so far.
 
 Judgements map one to one, and EX score checks out against them: Marvelous and O.K. are worth 3,
-Perfect 2, Great 1. Both captures satisfy it, which is a useful sanity check on a parse.
+Perfect 2, Great 1. Every capture satisfies it, which is a useful sanity check on a parse.
+
+O.K. does not count towards a combo, though it does count towards EX score. A captured Great Full
+Combo with 21 of them reported a `maxcombo` of 417 against 303 Marvelous, 96 Perfect and 18 Great
+-- exactly the other judgements, with the O.K. judgements excluded.
 
 Misses land in `judge_miss`. `judge_boo` and `judge_ng` stayed zero even on a play with eleven
 misses and a failed-out play with seventeen, so they map to nothing on Tachi's side.

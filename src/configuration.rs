@@ -43,7 +43,13 @@ pub struct DumpConfiguration {
     #[serde(default = "default_directory")]
     pub directory: PathBuf,
     #[serde(default = "default_true")]
-    pub write_xml: bool,
+    pub on_destroy: bool,
+    #[serde(default = "default_true")]
+    pub on_write: bool,
+    #[serde(default)]
+    pub write_kbin: bool,
+    #[serde(default)]
+    pub roots: Vec<String>,
     #[serde(default)]
     pub filter: Vec<String>,
     #[serde(default = "default_max_size")]
@@ -54,7 +60,10 @@ impl Default for DumpConfiguration {
     fn default() -> Self {
         Self {
             directory: default_directory(),
-            write_xml: true,
+            on_destroy: true,
+            on_write: true,
+            write_kbin: false,
+            roots: Vec::new(),
             filter: Vec::new(),
             max_size: default_max_size(),
         }

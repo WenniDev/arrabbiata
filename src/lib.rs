@@ -1,12 +1,17 @@
 mod configuration;
 mod dump;
+mod handlers;
+mod helpers;
+mod hook;
 mod log;
 mod sys;
+mod types;
 
 use crate::log::Logger;
 use ::log::{error, info};
 use configuration::Configuration;
 use std::sync::LazyLock;
+use url::Url;
 use windows::Win32::Foundation::{HINSTANCE, TRUE};
 use windows::Win32::System::Console::AllocConsole;
 use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
@@ -15,13 +20,23 @@ use windows::core::BOOL;
 pub static CONFIGURATION: LazyLock<Configuration> = LazyLock::new(|| match Configuration::load() {
     Ok(configuration) => configuration,
     Err(err) => {
-        // Upstream exits the process here. For a tool that only observes traffic, taking
-        // the game down over an unreadable config file would be a worse outcome than
-        // carrying on with defaults, so it is reported and the defaults are used.
+        // Upstream exits the process here. Taking the game down over an unreadable config
+        // file would be a worse outcome than carrying on with defaults, so it is reported
+        // and the defaults are used -- submission simply stays off without an API key.
         error!("{err:#}");
         error!("Falling back to the default configuration");
         Configuration::default()
     }
+});
+
+pub static TACHI_IMPORT_URL: LazyLock<String> = LazyLock::new(|| {
+    Url::parse(&CONFIGURATION.tachi.base_url)
+        .and_then(|base| base.join(&CONFIGURATION.tachi.import))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|err| {
+            error!("Could not build the Tachi import URL: {err:#}");
+            String::new()
+        })
 });
 
 fn print_infos() {
@@ -58,14 +73,15 @@ extern "system" fn DllMain(
             }
 
             // Unlike upstream, there is no avs2-ea3.dll on GRAND PRIX to hang a boot hook
-            // on, so the property hook goes in directly. chainload.txt loads us after AVS
-            // is up, which is what makes this safe.
-            if let Err(err) = dump::init() {
+            // on, so the property hooks go in directly. chainload.txt loads us after AVS is
+            // up, which is what makes this safe. The game is identified per-request instead,
+            // from the `game_id` every payload carries.
+            if let Err(err) = hook::init() {
                 error!("{err:#}");
             }
         }
         DLL_PROCESS_DETACH => {
-            if let Err(err) = dump::release() {
+            if let Err(err) = hook::release() {
                 error!("{err:#}");
             }
         }

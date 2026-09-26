@@ -5,9 +5,9 @@ onto Tachi. Worked out from captured play; nothing else documents it.
 
 ## What it refuses
 
-A stage is submitted only when everything about it adds up. Otherwise it is refused, logged with
-the reason, and written to `arrabbiata-dumps\` so it can be diagnosed — a wrong score submitted
-silently is worse than a missing one.
+A stage is submitted only when everything about it adds up. Otherwise it is refused and the
+reason logged, naming the value that could not be placed — a wrong score submitted silently is
+worse than a missing one.
 
 The lamp has to agree with itself. Judgements settle the full-combo tier, since the worst
 judgement present names it; `clearkind` settles everything else, because judgements alone cannot

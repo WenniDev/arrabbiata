@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn multi_line_payloads_are_handled_throughout() {
-        // A dry run prints a whole indented JSON import through this.
+        // A multi-line message arrives as one write.
         assert_eq!(to_crlf(b"{\n  \"a\": 1\n}\n"), b"{\r\n  \"a\": 1\r\n}\r\n");
     }
 

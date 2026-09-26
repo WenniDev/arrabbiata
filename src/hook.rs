@@ -1,4 +1,4 @@
-//! The AVS property hooks, and what to do with what they see.
+//! The AVS property hook, and what to do with what it sees.
 
 use std::cell::Cell;
 use std::sync::Mutex;
@@ -11,7 +11,7 @@ use crate::handlers::scores;
 use crate::sys::{property_mem_write, property_query_size, property_set_flag};
 use crate::types::game::{Envelope, Note};
 use crate::types::tachi::{Import, ImportMeta};
-use crate::{CONFIGURATION, TACHI_IMPORT_URL, dump, helpers};
+use crate::{CONFIGURATION, TACHI_IMPORT_URL, helpers};
 
 /// AVS picks a property's serialization from flags held on the property itself: setting
 /// 0x800 and clearing 0x008 switches the native kbin output to JSON. `serialize` restores
@@ -19,14 +19,16 @@ use crate::{CONFIGURATION, TACHI_IMPORT_URL, dump, helpers};
 const FLAG_JSON: u32 = 0x800;
 const FLAG_KBIN: u32 = 0x008;
 
+/// Properties above this are not read. A save is a few tens of kilobytes; the music database
+/// that also passes through here is nearly a megabyte and is of no interest.
+const MAX_SIZE: usize = 1024 * 1024;
+
 /// How many recently submitted plays to remember. A stage is saved twice -- once when it
 /// ends and again at game over -- so this only has to outlive one session's worth of stages.
 const RECENT_PLAYS: usize = 32;
 
-static SEEN_DESTROY: AtomicU64 = AtomicU64::new(0);
-static SEEN_WRITE: AtomicU64 = AtomicU64::new(0);
+static SEEN: AtomicU64 = AtomicU64::new(0);
 static SUBMITTED: AtomicU64 = AtomicU64::new(0);
-static DRY_RUN: AtomicU64 = AtomicU64::new(0);
 static REFUSED: AtomicU64 = AtomicU64::new(0);
 
 /// Identifies a play by chart and end time. Both saves of one stage share all three, so the
@@ -36,56 +38,25 @@ type PlayId = (u32, i32, i64);
 static RECENT: Mutex<Vec<PlayId>> = Mutex::new(Vec::new());
 
 thread_local! {
-    /// Serializing a property calls back into the hooked functions; without this guard the
-    /// first capture recurses until the stack runs out.
+    /// Serializing a property calls back into the hooked function; without this guard the
+    /// first read recurses until the stack runs out.
     static CAPTURING: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn init() -> Result<()> {
-    let config = &CONFIGURATION.dump;
-
-    if config.on_destroy {
-        crochet::enable!(property_destroy_hook).map_err(|err| {
-            anyhow::anyhow!(
-                "Could not hook property_destroy in avs2-core.dll: {err:#}. \
-                 If this is a load-order problem, move arrabbiata.dll further down chainload.txt."
-            )
-        })?;
-    }
-
-    if config.on_write {
-        crochet::enable!(property_mem_write_hook).map_err(|err| {
-            anyhow::anyhow!("Could not hook property_mem_write in avs2-core.dll: {err:#}")
-        })?;
-    }
-
-    if !config.on_destroy && !config.on_write {
-        warn!("Both dump.on_destroy and dump.on_write are off, so nothing will be seen");
-        return Ok(());
-    }
+    crochet::enable!(property_mem_write_hook).map_err(|err| {
+        anyhow::anyhow!(
+            "Could not hook property_mem_write in avs2-core.dll: {err:#}. \
+             If this is a load-order problem, move arrabbiata.dll further down chainload.txt."
+        )
+    })?;
 
     let no_key = CONFIGURATION.tachi.api_key.as_deref().unwrap_or("").is_empty()
         && CONFIGURATION.profiles.is_empty();
-
-    if !CONFIGURATION.general.submit {
-        info!(
-            "Dry run: general.submit is off, so each score is worked out and printed in full \
-             but nothing is sent"
-        );
-    } else if no_key {
-        info!(
-            "Dry run: no Tachi API key is set, so each score is worked out and printed in full \
-             but nothing is sent. Set tachi.api_key in arrabbiata.toml to submit."
-        );
+    if no_key {
+        warn!("No Tachi API key is set, so nothing will be submitted. Edit arrabbiata.toml");
     } else {
         info!("Submitting scores to {}", TACHI_IMPORT_URL.as_str());
-    }
-
-    if config.all {
-        info!(
-            "dump.all is on: every property is written to '{}'",
-            config.directory.display()
-        );
     }
 
     Ok(())
@@ -93,20 +64,12 @@ pub fn init() -> Result<()> {
 
 pub fn release() -> Result<()> {
     info!(
-        "Seen {} properties via property_destroy and {} via property_mem_write; \
-         submitted {} scores, {} dry runs, refused {}, wrote {} dumps",
-        SEEN_DESTROY.load(Ordering::Relaxed),
-        SEEN_WRITE.load(Ordering::Relaxed),
+        "Seen {} properties; submitted {} scores, refused {}",
+        SEEN.load(Ordering::Relaxed),
         SUBMITTED.load(Ordering::Relaxed),
-        DRY_RUN.load(Ordering::Relaxed),
-        REFUSED.load(Ordering::Relaxed),
-        dump::written()
+        REFUSED.load(Ordering::Relaxed)
     );
 
-    if crochet::is_enabled!(property_destroy_hook) {
-        crochet::disable!(property_destroy_hook)
-            .map_err(|err| anyhow::anyhow!("Could not unhook property_destroy: {err:#}"))?;
-    }
     if crochet::is_enabled!(property_mem_write_hook) {
         crochet::disable!(property_mem_write_hook)
             .map_err(|err| anyhow::anyhow!("Could not unhook property_mem_write: {err:#}"))?;
@@ -115,134 +78,50 @@ pub fn release() -> Result<()> {
     Ok(())
 }
 
-#[crochet::hook("avs2-core.dll", "XCgsqzn0000091")]
-pub unsafe fn property_destroy_hook(property: *mut ()) -> i32 {
-    if property.is_null() {
-        return 0;
-    }
-
-    SEEN_DESTROY.fetch_add(1, Ordering::Relaxed);
-    unsafe { capture(property, "destroy") };
-
-    call_original!(property)
-}
-
 /// The serialization path a request takes on its way out. A `usersave` passes through here
-/// exactly once, where `property_destroy` sees it twice, so this is where scores are sent.
+/// exactly once, which is what makes it the place to submit from.
 #[crochet::hook("avs2-core.dll", "XCgsqzn00000b8")]
 pub unsafe fn property_mem_write_hook(property: *mut (), data: *mut u8, size: u32) -> i32 {
     if !property.is_null() {
-        SEEN_WRITE.fetch_add(1, Ordering::Relaxed);
-        unsafe { capture(property, "write") };
+        SEEN.fetch_add(1, Ordering::Relaxed);
+        unsafe { capture(property) };
     }
 
     call_original!(property, data, size)
 }
 
-unsafe fn capture(property: *mut (), source: &str) {
+unsafe fn capture(property: *mut ()) {
     let already_capturing = CAPTURING.with(|flag| flag.replace(true));
     if already_capturing {
         return;
     }
 
-    if let Err(err) = unsafe { process(property, source) } {
-        error!("Could not process a property seen via {source}: {err:#}");
+    let Some(json) = (unsafe { serialize(property) }) else {
+        CAPTURING.with(|flag| flag.set(false));
+        return;
+    };
+    let text = String::from_utf8_lossy(&json);
+
+    let is_usersave = root_name(&text).as_deref() == Some("eacnet")
+        && json_field(&text, "method").as_deref() == Some("usergamedata_advanced")
+        && json_field(&text, "mode").as_deref() == Some("usersave");
+
+    if is_usersave {
+        handle_usersave(&json);
     }
 
     CAPTURING.with(|flag| flag.set(false));
 }
 
-unsafe fn process(property: *mut (), source: &str) -> Result<()> {
-    let config = &CONFIGURATION.dump;
-
-    let Some(json) = (unsafe { serialize(property, true) }) else {
-        return Ok(());
-    };
-    let text = String::from_utf8_lossy(&json);
-
-    let root = root_name(&text);
-    let method = json_field(&text, "method");
-    let mode = json_field(&text, "mode");
-
-    // Submitted from the write path only: property_destroy sees the same save twice.
-    let is_usersave = root.as_deref() == Some("eacnet")
-        && method.as_deref() == Some("usergamedata_advanced")
-        && mode.as_deref() == Some("usersave");
-
-    // Handled even with submission off, where the payload is still parsed, converted and
-    // reported.
-    if is_usersave && source == "write" {
-        handle_usersave(&json);
-    }
-
-    if config.all {
-        let kbin = config
-            .write_kbin
-            .then(|| unsafe { serialize(property, false) })
-            .flatten();
-        dump_payload(source, &root, &method, &mode, &text, &json, kbin.as_deref())?;
-    }
-
-    Ok(())
-}
-
-fn dump_payload(
-    source: &str,
-    root: &Option<String>,
-    method: &Option<String>,
-    mode: &Option<String>,
-    text: &str,
-    json: &[u8],
-    kbin: Option<&[u8]>,
-) -> Result<()> {
-    let config = &CONFIGURATION.dump;
-
-    if !config.roots.is_empty() {
-        let keep = root
-            .as_ref()
-            .is_some_and(|root| config.roots.iter().any(|wanted| wanted == root));
-        if !keep {
-            return Ok(());
-        }
-    }
-
-    if !config.filter.is_empty()
-        && !config
-            .filter
-            .iter()
-            .any(|needle| text.contains(needle.as_str()))
-    {
-        return Ok(());
-    }
-
-    let label = [
-        Some(source.to_string()),
-        root.clone(),
-        json_field(text, "service"),
-        method.clone(),
-        mode.clone(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>()
-    .join("-");
-
-    let files = dump::write(&label, Some(json), kbin)?;
-    debug!("Dumped {label} ({} bytes) -> {}", json.len(), files.join(", "));
-
-    Ok(())
-}
-
 /// Parses a save and submits whatever stage it carries.
 ///
 /// Returns nothing: a save that cannot be made sense of must not disturb a running game, so
-/// failures are logged and, where one might be a score, dumped.
+/// failures are logged and dropped.
 fn handle_usersave(json: &[u8]) {
     let envelope = match serde_json::from_slice::<Envelope>(json) {
         Ok(envelope) => envelope,
         Err(err) => {
             error!("A usersave did not parse: {err}");
-            refuse(json, "unparseable");
             return;
         }
     };
@@ -271,14 +150,13 @@ fn handle_usersave(json: &[u8]) {
         return;
     }
 
-    let api_key = CONFIGURATION.api_key_for(&save.refid);
-    if api_key.is_none() {
+    let Some(api_key) = CONFIGURATION.api_key_for(&save.refid) else {
         warn!(
-            "No API key covers refid {}, so this is a dry run: the score is worked out and \
-             reported but not sent anywhere",
+            "No API key covers refid {}, so its scores are not submitted",
             save.refid
         );
-    }
+        return;
+    };
 
     debug!(
         "Save from {} (ddrcode {}, refid {}) on {}, at game over: {}",
@@ -296,7 +174,7 @@ fn handle_usersave(json: &[u8]) {
             continue;
         }
 
-        handle_note(note, api_key, json);
+        submit(note, api_key);
     }
 }
 
@@ -317,11 +195,7 @@ fn claim(note: &Note) -> bool {
     true
 }
 
-/// Works one stage out and either sends it or reports what would have been sent.
-///
-/// `api_key` is `None` when nothing covers this player; that, or `general.submit` being off,
-/// makes a dry run, which differs from a real one only in skipping the POST.
-fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
+fn submit(note: &Note, api_key: &str) {
     let converted = match scores::convert(note) {
         Ok(converted) => converted,
         Err(refusal) => {
@@ -330,19 +204,8 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
                 "Refusing to submit mcode {} ({}): {refusal}",
                 note.mcode, note.basename
             );
-            refuse(json, "refused");
             return;
         }
-    };
-
-    let import = Import {
-        meta: ImportMeta {
-            game: "ddr",
-            playtype: converted.playtype,
-            service: "arrabbiata".to_string(),
-            version: CONFIGURATION.tachi.version.clone(),
-        },
-        scores: vec![converted.score],
     };
 
     // Flare takes no part in a score's identity, so an unplaceable rank is dropped rather
@@ -355,6 +218,16 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
         );
     }
 
+    let import = Import {
+        meta: ImportMeta {
+            game: "ddr",
+            playtype: converted.playtype,
+            service: "arrabbiata".to_string(),
+            version: CONFIGURATION.tachi.version.clone(),
+        },
+        scores: vec![converted.score],
+    };
+
     let summary = format!(
         "{} {} on {} {} {} {} (mcode {})",
         import.scores[0].lamp,
@@ -365,15 +238,6 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
         note.level,
         note.mcode
     );
-    let Some(api_key) = api_key.filter(|_| CONFIGURATION.general.submit) else {
-        DRY_RUN.fetch_add(1, Ordering::Relaxed);
-        info!(
-            "Would submit {summary}:\n{}",
-            serde_json::to_string_pretty(&import)
-                .unwrap_or_else(|err| format!("(could not render the import: {err})"))
-        );
-        return;
-    };
     let api_key = api_key.to_string();
 
     // A blocking POST would show up as a stall on the save screen.
@@ -396,31 +260,13 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
     });
 }
 
-fn refuse(json: &[u8], reason: &str) {
-    if !CONFIGURATION.dump.on_refusal {
-        return;
-    }
-
-    match dump::write(&format!("usersave-{reason}"), Some(json), None) {
-        Ok(files) => warn!("Wrote the payload to {} for diagnosis", files.join(", ")),
-        Err(err) => error!("Could not write the refused payload: {err:#}"),
-    }
-}
-
-/// Serializes the property, either as JSON or in its native kbin form.
-unsafe fn serialize(property: *mut (), json: bool) -> Option<Vec<u8>> {
+/// Serializes the property as JSON.
+unsafe fn serialize(property: *mut ()) -> Option<Vec<u8>> {
     unsafe {
-        if json {
-            property_set_flag(property, FLAG_JSON, FLAG_KBIN);
-        }
+        property_set_flag(property, FLAG_JSON, FLAG_KBIN);
 
         let size = property_query_size(property);
-        let max_size = CONFIGURATION.dump.max_size;
-
-        let result = if size <= 0 {
-            None
-        } else if size as usize > max_size {
-            warn!("Skipping a {size} byte property, over the dump.max_size limit of {max_size}");
+        let result = if size <= 0 || size as usize > MAX_SIZE {
             None
         } else {
             let mut buffer = vec![0u8; size as usize];
@@ -442,9 +288,7 @@ unsafe fn serialize(property: *mut (), json: bool) -> Option<Vec<u8>> {
             }
         };
 
-        if json {
-            property_set_flag(property, FLAG_KBIN, FLAG_JSON);
-        }
+        property_set_flag(property, FLAG_KBIN, FLAG_JSON);
 
         result
     }
@@ -462,7 +306,7 @@ fn root_name(text: &str) -> Option<String> {
 
 /// Reads `"key" : "value"` out of AVS's JSON output.
 ///
-/// For routing and labelling only; the payload that matters is parsed with serde.
+/// For routing only; the payload that matters is parsed with serde.
 fn json_field(text: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let after = &text[text.find(&needle)? + needle.len()..];
@@ -507,7 +351,6 @@ mod tests {
     #[test]
     fn recognizes_a_usersave_from_its_envelope() {
         assert_eq!(root_name(SAVE).as_deref(), Some("eacnet"));
-        assert_eq!(json_field(SAVE, "service").as_deref(), Some("local"));
         assert_eq!(
             json_field(SAVE, "method").as_deref(),
             Some("usergamedata_advanced")

@@ -1,6 +1,5 @@
 [general]
 enable = true        # false installs no hooks at all
-submit = true        # false works each score out and prints it, but sends nothing
 timeout = 3000       # ms
 
 [tachi]
@@ -16,14 +15,3 @@ api_key = ''         # required, and needs the submit_score permission
 # [profiles.'someone-else']
 # refids = ['0000001346040870']
 # api_key = 'their-key-here'
-
-[dump]
-directory = 'arrabbiata-dumps'  # relative to the game's working directory, <game>\game\
-on_refusal = true    # keep this on: a save that made no sense is kept instead of lost
-all = false          # dump every property; for working out what a game update changed
-on_destroy = true
-on_write = true      # the one that catches outgoing saves
-write_kbin = false   # native binary form, beside the JSON
-roots = []           # keep only these outermost nodes, e.g. ['eacnet']; empty keeps all
-filter = []          # keep only payloads containing one of these; empty keeps all
-max_size = 16777216  # skip anything larger

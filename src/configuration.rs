@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const CONFIG_FILE: &str = "arrabbiata.toml";
 
@@ -17,8 +17,6 @@ pub struct Configuration {
     /// identified by the `refid` their own save carries.
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfiguration>,
-    #[serde(default)]
-    pub dump: DumpConfiguration,
 }
 
 impl Configuration {
@@ -35,13 +33,10 @@ impl Configuration {
     /// The API key to submit a given player's scores under, or `None` if that player should
     /// not be submitted at all.
     pub fn api_key_for(&self, refid: &str) -> Option<&str> {
-        let from_profile = self
-            .profiles
+        self.profiles
             .values()
             .find(|profile| profile.refids.iter().any(|known| known == refid))
-            .map(|profile| profile.api_key.as_str());
-
-        from_profile
+            .map(|profile| profile.api_key.as_str())
             .or(self.tachi.api_key.as_deref())
             .filter(|key| !key.is_empty())
     }
@@ -51,9 +46,6 @@ impl Configuration {
 pub struct GeneralConfiguration {
     #[serde(default = "default_true")]
     pub enable: bool,
-    /// Set to `false` to watch traffic without sending anything anywhere.
-    #[serde(default = "default_true")]
-    pub submit: bool,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
 }
@@ -62,7 +54,6 @@ impl Default for GeneralConfiguration {
     fn default() -> Self {
         Self {
             enable: true,
-            submit: true,
             timeout: default_timeout(),
         }
     }
@@ -76,8 +67,8 @@ pub struct TachiConfiguration {
     pub import: String,
     #[serde(default)]
     pub api_key: Option<String>,
-    /// Unset so Tachi resolves charts across versions; it has no `grandprix` version for
-    /// `ddr`.
+    /// Tachi has no `grandprix` version for `ddr`. Left unset so Tachi resolves charts
+    /// across versions rather than filing scores under one that was guessed at.
     #[serde(default)]
     pub version: Option<String>,
 }
@@ -100,47 +91,6 @@ pub struct ProfileConfiguration {
     pub api_key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DumpConfiguration {
-    #[serde(default = "default_directory")]
-    pub directory: PathBuf,
-    /// Dump every property the hooks see. Off for normal play.
-    #[serde(default)]
-    pub all: bool,
-    /// Always dump a payload that could not be turned into a score, so a refusal can be
-    /// diagnosed instead of a score being silently lost.
-    #[serde(default = "default_true")]
-    pub on_refusal: bool,
-    #[serde(default = "default_true")]
-    pub on_destroy: bool,
-    #[serde(default = "default_true")]
-    pub on_write: bool,
-    #[serde(default)]
-    pub write_kbin: bool,
-    #[serde(default)]
-    pub roots: Vec<String>,
-    #[serde(default)]
-    pub filter: Vec<String>,
-    #[serde(default = "default_max_size")]
-    pub max_size: usize,
-}
-
-impl Default for DumpConfiguration {
-    fn default() -> Self {
-        Self {
-            directory: default_directory(),
-            all: false,
-            on_refusal: true,
-            on_destroy: true,
-            on_write: true,
-            write_kbin: false,
-            roots: Vec::new(),
-            filter: Vec::new(),
-            max_size: default_max_size(),
-        }
-    }
-}
-
 fn default_true() -> bool {
     true
 }
@@ -159,14 +109,6 @@ fn default_import_endpoint() -> String {
     "/ir/direct-manual/import".to_string()
 }
 
-fn default_directory() -> PathBuf {
-    PathBuf::from("arrabbiata-dumps")
-}
-
-fn default_max_size() -> usize {
-    16 * 1024 * 1024
-}
-
 #[cfg(test)]
 mod tests {
     use super::Configuration;
@@ -182,13 +124,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         assert!(config.general.enable);
-        assert!(config.general.submit);
         assert_eq!(config.tachi.base_url, "https://kamai.tachi.ac/");
         // Out of the box there is no key, so nothing is submitted.
         assert_eq!(config.api_key_for("0000001346040870"), None);
         // Unset, so Tachi matches charts across versions.
         assert_eq!(config.tachi.version, None);
-        assert!(config.dump.on_refusal);
-        assert!(!config.dump.all);
     }
 }

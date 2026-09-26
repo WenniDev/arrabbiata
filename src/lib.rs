@@ -1,5 +1,4 @@
 mod configuration;
-mod dump;
 mod handlers;
 mod helpers;
 mod hook;

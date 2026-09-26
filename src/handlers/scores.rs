@@ -1,6 +1,6 @@
 //! Turning one stage's result into a Tachi score, or refusing to.
 //!
-//! A stage that cannot be fully accounted for is refused and dumped rather than submitted on
+//! A stage that cannot be fully accounted for is refused rather than submitted on
 //! a guess: a wrong score is worse than a missing one.
 
 use crate::types::game::Note;

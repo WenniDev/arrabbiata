@@ -21,7 +21,7 @@ impl Logger {
     pub fn new() -> Self {
         Self {
             console: anstream::AutoStream::new(std::io::stdout(), color_choice()),
-            file: anstream::StripStream::new(File::create("mikado.log").unwrap()),
+            file: anstream::StripStream::new(File::create("arrabbiata.log").unwrap()),
         }
     }
 
@@ -29,7 +29,7 @@ impl Logger {
         env_logger::builder()
             .filter_level(LevelFilter::Error)
             .filter_module(
-                "mikado",
+                "arrabbiata",
                 if cfg!(debug_assertions) {
                     LevelFilter::Trace
                 } else {

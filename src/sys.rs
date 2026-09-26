@@ -1,3 +1,6 @@
+// Only the entries this fork actually calls are declared. Upstream mikado also maps
+// property_node_name (XCgsqzn00000a7), which is present and verified on GRAND PRIX too --
+// re-declare it here if a later change needs to read node names.
 #[crochet::load("avs2-core.dll")]
 extern "C" {
     #[symbol("XCgsqzn000009a")]
@@ -8,8 +11,6 @@ extern "C" {
     pub fn property_query_size(property: *const ()) -> i32;
     #[symbol("XCgsqzn00000a1")]
     pub fn property_search(property: *const (), node: *const (), path: *const u8) -> *mut ();
-    #[symbol("XCgsqzn00000a7")]
-    pub fn property_node_name(node: *const (), buffer: *mut u8, size: u32) -> i32;
     #[symbol("XCgsqzn00000af")]
     pub fn property_node_refer(
         property: *const (),

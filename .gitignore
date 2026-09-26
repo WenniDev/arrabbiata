@@ -1,3 +1,7 @@
 /target
 /Cargo.lock
 /.idea
+
+# Produced at runtime next to the DLL
+/arrabbiata.log
+/arrabbiata-dumps

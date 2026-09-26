@@ -1,73 +1,74 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const CONFIG_FILE: &str = "arrabbiata.toml";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Configuration {
+    #[serde(default)]
     pub general: GeneralConfiguration,
     #[serde(default)]
-    pub cards: Option<CardsConfiguration>,
-    #[serde(default)]
-    pub profiles: HashMap<String, ProfileConfiguration>,
-    pub tachi: TachiConfiguration,
+    pub dump: DumpConfiguration,
 }
 
 impl Configuration {
     pub fn load() -> Result<Self> {
-        if !Path::new("mikado.toml").exists() {
-            File::create("mikado.toml")
-                .and_then(|mut file| file.write_all(include_bytes!("../mikado.toml")))
-                .map_err(|err| anyhow::anyhow!("Could not create default config file: {}", err))?;
+        if !Path::new(CONFIG_FILE).exists() {
+            File::create(CONFIG_FILE)
+                .and_then(|mut file| file.write_all(include_bytes!("../arrabbiata.toml")))
+                .map_err(|err| anyhow::anyhow!("Could not create default config file: {err}"))?;
         }
 
-        confy::load_path("mikado.toml")
-            .map_err(|err| anyhow::anyhow!("Could not load config: {}", err))
+        confy::load_path(CONFIG_FILE).map_err(|err| anyhow::anyhow!("Could not load config: {err}"))
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfiguration {
     #[serde(default = "default_true")]
     pub enable: bool,
+}
+
+impl Default for GeneralConfiguration {
+    fn default() -> Self {
+        Self { enable: true }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DumpConfiguration {
+    #[serde(default = "default_directory")]
+    pub directory: PathBuf,
+    #[serde(default = "default_true")]
+    pub write_xml: bool,
     #[serde(default)]
-    pub export_class: bool,
-    #[serde(default)]
-    pub inject_cloud_pbs: bool,
-    #[serde(default = "default_timeout")]
-    pub timeout: u64,
+    pub filter: Vec<String>,
+    #[serde(default = "default_max_size")]
+    pub max_size: usize,
+}
+
+impl Default for DumpConfiguration {
+    fn default() -> Self {
+        Self {
+            directory: default_directory(),
+            write_xml: true,
+            filter: Vec::new(),
+            max_size: default_max_size(),
+        }
+    }
 }
 
 fn default_true() -> bool {
     true
 }
 
-fn default_timeout() -> u64 {
-    3000
+fn default_directory() -> PathBuf {
+    PathBuf::from("arrabbiata-dumps")
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CardsConfiguration {
-    #[serde(default)]
-    pub whitelist: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProfileConfiguration {
-    pub cards: Vec<String>,
-    pub api_key: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TachiConfiguration {
-    // TODO: it could be useful to move base_url to ProfileConfiguration as well
-    //       in case different users want different Tachi instances
-    pub base_url: String,
-    pub status: String,
-    pub import: String,
-    pub pbs: String,
-    #[serde(default)]
-    pub api_key: Option<String>,
+fn default_max_size() -> usize {
+    16 * 1024 * 1024
 }

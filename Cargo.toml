@@ -1,18 +1,22 @@
 [package]
-name = "mikado"
-version = "0.3.0"
-authors = ["Adam Thibert <adamthibert01@gmail.com>"]
-edition = "2024"
+name = "arrabbiata"
+version = "0.1.0"
+authors = ["WenniDev"]
 license = "MIT"
 readme = "README.md"
+edition = "2024"
 build = "build.rs"
+
+# Forked from https://github.com/adamaq01/mikado by Adam Thibert, which targets
+# SOUND VOLTEX. The AVS property layer (src/sys.rs) and the logger are reused as-is;
+# everything game-specific is rewritten for DanceDanceRevolution GRAND PRIX.
 
 [lib]
 crate-type = ["cdylib"]
 
 [profile.release]
-strip = true  # Automatically strip symbols from the binary.
-opt-level = "z"  # Optimize for size.
+strip = true      # Automatically strip symbols from the binary.
+opt-level = "z"   # Optimize for size.
 lto = true
 codegen-units = 1
 panic = "abort"
@@ -29,14 +33,6 @@ anstyle = "1"
 anstream = "1"
 panic-log = "0.3"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 confy = "2"
 anyhow = "1"
-ureq = { version = "3.4", features = ["json"] }
-url = "2.3"
-either = { version = "1", features = ["serde"] }
-num_enum = "0.7"
 chrono = "0.4"
-kbinxml = { git = "https://github.com/mbilker/kbinxml-rs.git", version = "3.1.0" }
-bytes = "1.4"
-dynfmt = { version = "0.2", default-features = false, features = ["curly"] }

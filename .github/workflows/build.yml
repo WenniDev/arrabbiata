@@ -24,10 +24,10 @@ jobs:
         include:
           - name: win-64
             target: x86_64-pc-windows-msvc
-            artifact_name: mikado
+            artifact_name: arrabbiata
           - name: win-7
             target: x86_64-win7-windows-msvc
-            artifact_name: mikado-win7
+            artifact_name: arrabbiata-win7
             nightly: true
 
     steps:
@@ -56,8 +56,8 @@ jobs:
       run: cargo +nightly build --release -Z build-std=panic_abort,std --target ${{ matrix.target }}
 
     - name: Rename artifact
-      if: ${{ matrix.artifact_name != 'mikado' }}
-      run: mv target/${{ matrix.target }}/release/mikado.dll target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.dll
+      if: ${{ matrix.artifact_name != 'arrabbiata' }}
+      run: mv target/${{ matrix.target }}/release/arrabbiata.dll target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.dll
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7

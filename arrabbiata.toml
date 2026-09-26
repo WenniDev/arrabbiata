@@ -1,0 +1,19 @@
+[general]
+# Set to 'false' to disable the hook entirely
+enable = true
+
+[dump]
+# Where intercepted e-amusement properties are written, relative to the game
+# executable unless an absolute path is given
+directory = 'arrabbiata-dumps'
+# Also write the native (XML) serialization next to the JSON one. The JSON form is
+# far easier to read; the XML one preserves node types, which matters when working
+# out how a payload is actually encoded.
+write_xml = true
+# Only dump properties whose serialized form contains one of these substrings.
+# Leave empty to dump everything -- which is what you want for discovery.
+# Example: filter = ['playerdata', 'cardmng']
+filter = []
+# Properties larger than this (in bytes) are skipped rather than written out, so a
+# runaway payload cannot fill the disk. Score payloads are large; do not set this low.
+max_size = 16777216

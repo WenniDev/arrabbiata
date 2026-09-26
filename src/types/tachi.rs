@@ -6,11 +6,7 @@
 
 use serde::Serialize;
 
-/// Tachi's lamp enum, in its own order. `LIFE4` sits between `CLEAR` and `FULL COMBO`.
-///
-/// Modelled in full even though `Assist` and `Life4` are never produced: the `clearkind`
-/// values that would mean them have not been observed, and a partial copy of Tachi's enum
-/// would be a worse thing to check future captures against.
+/// Tachi's lamp enum, in its own order: `LIFE4` sits between `CLEAR` and `FULL COMBO`.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lamp {
@@ -63,13 +59,12 @@ impl Serialize for Lamp {
 }
 
 /// Tachi's Flare ranks, which `playing_flare` indexes directly: a play cleared at Flare II
-/// sends 2. Confirmed on a Floating Flare clear, where the game walks down from EX until
-/// something passes and reports the rank that did.
+/// sends 2.
 pub const FLARES: [&str; 11] = [
     "0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "EX",
 ];
 
-/// Tachi's fixed difficulty order for `ddr`, which `notetype` indexes directly.
+/// Tachi's fixed difficulty order for `ddr`.
 pub const DIFFICULTIES: [&str; 5] = [
     "BEGINNER",
     "BASIC",
@@ -90,8 +85,7 @@ pub struct ImportMeta {
     pub playtype: &'static str,
     pub service: String,
     /// Tachi has no `grandprix` version for `ddr`, only `a`, `a20`, `a20plus`, `a3`,
-    /// `konaste` and `world`. Left out by default so Tachi resolves charts across versions
-    /// rather than filing scores under a version that was guessed at.
+    /// `konaste` and `world`. Left out by default so Tachi resolves charts across versions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 }
@@ -132,11 +126,9 @@ pub struct Optional {
     /// Left out for a play without one: Tachi already defaults to Flare 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flare: Option<&'static str>,
-    /// Tachi validates this with `isPositiveInteger`, so a zero would be rejected outright
-    /// rather than stored as zero. It is left out instead.
-    ///
-    /// It is also `partOfScoreID` on Tachi's side, meaning it takes part in a score's
-    /// identity: sending it inconsistently would create duplicates rather than updates.
+    /// Tachi validates this with `isPositiveInteger`, so a zero is rejected outright and is
+    /// left out instead. It is also `partOfScoreID`, so sending it inconsistently creates
+    /// duplicates rather than updates.
     #[serde(rename = "exScore", skip_serializing_if = "Option::is_none")]
     pub ex_score: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

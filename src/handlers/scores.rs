@@ -1,8 +1,7 @@
 //! Turning one stage's result into a Tachi score, or refusing to.
 //!
-//! The guiding rule is that a stage this fork cannot fully account for is refused and
-//! dumped rather than submitted on a guess. A wrong score submitted silently is worse than
-//! a missing one, and the dump turns each refusal into something that can be diagnosed.
+//! A stage that cannot be fully accounted for is refused and dumped rather than submitted on
+//! a guess: a wrong score is worse than a missing one.
 
 use crate::types::game::Note;
 use crate::types::tachi::{DIFFICULTIES, FLARES, ImportScore, Judgements, Lamp, Optional};
@@ -18,8 +17,7 @@ pub enum Refusal {
         playstyle: i32,
     },
     ScoreOutOfRange(i64),
-    /// No lamp can be established: the combo broke, and `clearkind` is a value this fork
-    /// has never seen.
+    /// No lamp can be established: the combo broke, and `clearkind` is not a known value.
     UnknownClearKind(i32),
     /// The judgements and `clearkind` disagree about what happened.
     LampConflict {
@@ -86,12 +84,9 @@ pub struct Converted {
     pub score: ImportScore,
 }
 
-/// The `clearkind` values established from captured play.
+/// The known `clearkind` values. Anything else is refused.
 ///
-/// This is deliberately not a formula. The two full-combo values alone suggested `clearkind`
-/// was Tachi's lamp index plus three, which a later failed play disproved -- it is 1, not 3
-/// -- and LIFE4 landing on 6 rather than 4 rules out any other simple offset. Anything not
-/// listed here is refused.
+/// Deliberately a table and not a formula: these follow no offset from Tachi's lamp order.
 fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
     match clearkind {
         1 => Some(Lamp::Failed),
@@ -125,9 +120,9 @@ fn lamp_from_judgements(note: &Note) -> Option<Lamp> {
 
 /// Establishes the lamp from both sources and requires them to agree.
 ///
-/// The judgements are authoritative for full combos, including the two tiers no capture has
-/// produced a `clearkind` for. `clearkind` is authoritative for everything else, because
-/// judgements alone cannot separate a fail from a clear.
+/// The judgements are authoritative for full combos, including the tiers with no known
+/// `clearkind`. `clearkind` is authoritative for everything else, because judgements alone
+/// cannot separate a fail from a clear.
 fn lamp(note: &Note) -> Result<Lamp, Refusal> {
     let from_clearkind = lamp_from_clearkind(note.clearkind);
 
@@ -155,9 +150,8 @@ fn lamp(note: &Note) -> Result<Lamp, Refusal> {
 
 /// The Flare rank reached, if any.
 ///
-/// Flare is optional on Tachi's side and takes no part in a score's identity, so a rank this
-/// build cannot place is dropped rather than made to refuse an otherwise good score. The
-/// caller warns when that happens.
+/// Flare is optional on Tachi's side and takes no part in a score's identity, so an
+/// unplaceable rank is dropped rather than refusing the score. The caller warns.
 pub fn flare(note: &Note) -> Option<&'static str> {
     // Nothing to send for a play without a Flare: Tachi already defaults to 0.
     if note.playing_flare <= 0 {
@@ -172,10 +166,8 @@ pub fn flare(note: &Note) -> Option<&'static str> {
 /// The chart a `notetype` names: both how it is played and how hard it is.
 ///
 /// `notetype` runs straight through both playstyles rather than restarting, and doubles has
-/// no BEGINNER, which is why the ladder is nine values and not ten. Established from a
-/// doubles play reporting notetype 5 at level 3, matching the DP BASIC chart in Tachi's
-/// seeds -- reading it as a difficulty alone happened to work for singles and silently
-/// shifts everything by one for doubles.
+/// no BEGINNER, so the ladder is nine values and not ten. Reading it as a difficulty on its
+/// own works for singles and shifts every doubles chart by one.
 fn chart(notetype: i32) -> Option<(&'static str, &'static str)> {
     let (playtype, difficulty) = match notetype {
         0..=4 => ("SP", DIFFICULTIES[notetype as usize]),
@@ -212,8 +204,7 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
     let lamp = lamp(note)?;
 
     // A full combo means every note was part of the combo, so maxcombo has to equal the
-    // judgements that make one up. O.K. is not among them: a captured full combo with 21 of
-    // them had a maxcombo matching the other judgements exactly.
+    // judgements that make one up.
     if lamp.is_full_combo() {
         let expected = note.combo_notes();
         if note.maxcombo != expected {
@@ -372,8 +363,7 @@ mod tests {
     #[test]
     fn judgements_name_the_full_combo_tier() {
         let tiers = [
-            // clearkind moves with the tier, or the cross-check refuses the pair -- which is
-            // exactly what it is there to do.
+            // clearkind moves with the tier, or the cross-check refuses the pair.
             (Note { judge_good: 1, clearkind: 7, ..afronova() }, Lamp::FullCombo),
             (afronova(), Lamp::GreatFullCombo),
             (Note { judge_great: 0, clearkind: 9, ..afronova() }, Lamp::PerfectFullCombo),
@@ -392,8 +382,7 @@ mod tests {
 
     #[test]
     fn perfect_and_marvelous_combos_pass_without_a_known_clearkind() {
-        // clearkind 9 and 10 have never been captured. The judgements settle these on their
-        // own, so an unrecognized value must not refuse them.
+        // clearkind 9 and 10 are not known values; the judgements settle these on their own.
         let note = Note { judge_great: 0, clearkind: 9, maxcombo: 103, ..afronova() };
         assert_eq!(convert(&note).map(|c| c.score.lamp), Ok(Lamp::PerfectFullCombo));
     }
@@ -404,10 +393,7 @@ mod tests {
         assert_eq!(convert(&note).err(), Some(Refusal::UnknownClearKind(5)));
     }
 
-    /// An assisted clear, refused until its clearkind was known. The payload said what it
-    /// was: `opt_cut`, `opt_freeze` and `opt_jump` all 1 where every other capture had 0 --
-    /// CUT drops notes, and turning off jumps and freezes simplifies the chart -- while
-    /// `opt_gauge` was 0 and `life` -1, so it was the assists and not the gauge.
+    /// An assisted clear, clearkind 2.
     #[test]
     fn an_assisted_clear_is_recognized() {
         let note = Note {
@@ -435,9 +421,7 @@ mod tests {
         assert_eq!(converted.score.optional.ex_score, Some(784));
     }
 
-    /// A LIFE4 clear, which the hook refused before its clearkind was known. The payload
-    /// corroborated it twice over: `life` was 4 where every other capture had -1, and
-    /// `opt_gauge` was 2.
+    /// A LIFE4 clear, clearkind 6.
     #[test]
     fn a_life4_clear_is_recognized() {
         let note = Note {
@@ -487,9 +471,8 @@ mod tests {
         assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
     }
 
-    /// Bad Maniacs, DIFFICULT 13: a Great Full Combo with 21 O.K. judgements whose maxcombo
-    /// matched the other judgements exactly. This is what established that O.K. does not
-    /// count towards a combo, and it also exercises O.K. being worth 3 in the EX score:
+    /// Bad Maniacs, DIFFICULT 13: a Great Full Combo with 21 O.K. judgements, which stay out
+    /// of the combo but are still worth 3 each in the EX score:
     /// (303 + 21) * 3 + 96 * 2 + 18 = 1182.
     #[test]
     fn ok_judgements_do_not_count_towards_a_combo() {
@@ -517,8 +500,7 @@ mod tests {
         assert_eq!(converted.score.lamp, Lamp::GreatFullCombo);
         assert_eq!(converted.score.optional.ex_score, Some(1182));
 
-        // Counting O.K. towards the combo would have put maxcombo at 438, which is now
-        // refused rather than quietly tolerated.
+        // Counting O.K. towards the combo would put maxcombo at 438, which is refused.
         let note = Note { maxcombo: 438, ..note };
         assert_eq!(
             convert(&note).err(),
@@ -588,8 +570,7 @@ mod tests {
 
     #[test]
     fn a_flare_rank_beyond_the_ladder_is_dropped_not_refused() {
-        // Flare is optional and takes no part in a score's identity, so an unplaceable rank
-        // must not cost the whole score.
+        // An unplaceable rank must not cost the whole score.
         let note = Note { playing_flare: 11, ..afronova() };
         let converted = convert(&note).expect("the score should still convert");
         assert_eq!(converted.score.optional.flare, None);
@@ -598,9 +579,8 @@ mod tests {
 
     #[test]
     fn notetype_names_the_playstyle_as_well_as_the_difficulty() {
-        // BABY BABY GIMME YOUR LOVE on doubles BASIC, refused while notetype was read as a
-        // difficulty on its own. The level settles it: notetype 5 came with level 3, and
-        // DP BASIC is level 3 in Tachi's seeds where SP BASIC is 2.
+        // BABY BABY GIMME YOUR LOVE on doubles BASIC: notetype 5 at level 3, which is DP
+        // BASIC in Tachi's seeds where SP BASIC is level 2.
         let note = Note {
             stagenum: 1,
             mcode: 182,
@@ -657,9 +637,8 @@ mod tests {
         );
     }
 
-    /// End to end over a captured payload: the game's own JSON in, Tachi's JSON out. This
-    /// is what catches a serde field name that does not match what the game sends, which
-    /// the struct-level tests above cannot see.
+    /// End to end over a captured payload: the game's own JSON in, Tachi's JSON out. Catches
+    /// a serde field name that does not match what the game sends.
     #[test]
     fn a_captured_payload_becomes_the_expected_tachi_import() {
         use crate::types::fixtures::USERSAVE;
@@ -676,7 +655,7 @@ mod tests {
         assert_eq!(save.mode, "usersave");
         assert!(!save.isgameover);
 
-        // Five slots arrive; only the filled one is a play.
+        // Only a filled slot is a play.
         let played: Vec<_> = save.note.iter().filter(|note| !note.is_empty()).collect();
         assert_eq!(played.len(), 1);
 

@@ -32,8 +32,8 @@ api_key = ''
 # one level above 'game\modules' where the DLL lives.
 directory = 'arrabbiata-dumps'
 
-# Write out every property the hooks see. This is how the protocol was worked out; leave it
-# off for normal play, and turn it on if a game update breaks something.
+# Write out every property the hooks see. Leave it off for normal play; turn it on if a game
+# update breaks something.
 all = false
 
 # Always write out a save that could not be turned into a score. Keep this on: it is what

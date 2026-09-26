@@ -1,6 +1,5 @@
-// Only the entries this fork actually calls are declared, because the generated bindings
-// warn on anything unused. The rest of upstream's mapping is verified present on GRAND
-// PRIX and can be re-declared as needed:
+// Only the entries called here are declared; the generated bindings warn on unused ones.
+// Other AVS property entries present on GRAND PRIX, for when one is needed:
 //
 //   XCgsqzn000009d  property_clear_error
 //   XCgsqzn00000a1  property_search

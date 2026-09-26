@@ -8,12 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
 pub struct Logger {
-    // Routed through `AutoStream` so that, on older Windows consoles without native ANSI/VT
-    // support, our ANSI codes get translated into Windows Console API calls instead of being
-    // written out as raw (and unsupported) escape bytes.
+    // `AutoStream` turns ANSI codes into Console API calls on Windows consoles without
+    // native VT support, rather than writing them out as raw escape bytes.
     console: anstream::AutoStream<std::io::Stdout>,
-    // Wrapped so that any ANSI codes we write for the (possibly colored) console output get
-    // stripped back out before landing in the log file, regardless of `style_enabled()`.
+    // `StripStream` keeps the console's ANSI codes out of the log file.
     file: anstream::StripStream<File>,
 }
 
@@ -65,21 +63,15 @@ impl Logger {
 
 impl Write for Logger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // We share a console with whatever loaded us, and konasute_chainload's other
-        // passengers put it in virtual-terminal mode. There a bare line feed moves down a
-        // row without returning to column 0, so every line would start where the previous
-        // one ended. Expanding to CRLF is safe either way round: a console that does return
-        // on its own treats the extra carriage return as a no-op.
-        //
-        // Only the console needs this. The log file keeps plain line feeds, and is written
-        // the original bytes so the returned count stays honest.
-        // Ignore the result of the write to stdout, since it's not really important
+        // The shared console runs in virtual-terminal mode, where a bare line feed moves down
+        // a row without returning to column 0. CRLF is safe either way round: a console that
+        // does return on its own treats the extra carriage return as a no-op. The file keeps
+        // the original bytes, so the returned count stays honest.
         let _ = self.console.write_all(&to_crlf(buf));
         self.file.write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        // Ignore the result of the write to stdout, since it's not really important
         let _ = self.console.flush();
         self.file.flush()
     }
@@ -142,12 +134,9 @@ impl<T> ToStyled<T> for T {
     }
 }
 
-// Our writer always goes through `Target::Pipe`, which env_logger treats as a stream it
-// can't inspect, so its own `Formatter::default_level_style` is always disabled for us
-// (confirmed in its source: `Target::Pipe` never runs the stdout/stderr terminal check, and
-// falls back to `WriteStyle::Never`). To still color the console when it actually supports
-// it, we resolve color support ourselves the same way env_logger would for `Target::Stdout`:
-// honor `RUST_LOG_STYLE` if set, otherwise auto-detect via `anstream`'s terminal/env checks.
+// This logger is installed as a `Target::Pipe`, for which env_logger disables its own
+// styling unconditionally. Color support is therefore resolved here the way env_logger would
+// for `Target::Stdout`: honor `RUST_LOG_STYLE`, otherwise let anstream auto-detect.
 fn color_choice() -> anstream::ColorChoice {
     static CHOICE: OnceLock<anstream::ColorChoice> = OnceLock::new();
     *CHOICE.get_or_init(|| match std::env::var("RUST_LOG_STYLE").as_deref() {

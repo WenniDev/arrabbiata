@@ -13,9 +13,9 @@ use crate::types::game::{Envelope, Note};
 use crate::types::tachi::{Import, ImportMeta};
 use crate::{CONFIGURATION, TACHI_IMPORT_URL, dump, helpers};
 
-/// AVS picks a property's serialization from flags held on the property itself. Setting
-/// 0x800 while clearing 0x008 switches the output from the native kbin form to JSON. Both
-/// are always restored afterwards, so the game sees the property exactly as it left it.
+/// AVS picks a property's serialization from flags held on the property itself: setting
+/// 0x800 and clearing 0x008 switches the native kbin output to JSON. `serialize` restores
+/// both afterwards, so the game sees the property exactly as it left it.
 const FLAG_JSON: u32 = 0x800;
 const FLAG_KBIN: u32 = 0x008;
 
@@ -29,16 +29,15 @@ static SUBMITTED: AtomicU64 = AtomicU64::new(0);
 static DRY_RUN: AtomicU64 = AtomicU64::new(0);
 static REFUSED: AtomicU64 = AtomicU64::new(0);
 
-/// Identifies a play by chart and end time. The two saves of one stage share all three, so
-/// this catches the repeat without relying on `isgameover`, whose meaning has only been
-/// observed and not documented.
+/// Identifies a play by chart and end time. Both saves of one stage share all three, so the
+/// repeat is caught without trusting `isgameover`.
 type PlayId = (u32, i32, i64);
 
 static RECENT: Mutex<Vec<PlayId>> = Mutex::new(Vec::new());
 
 thread_local! {
-    /// Reading a property means serializing it, which calls back into the very functions
-    /// being hooked. Without this the first capture would recurse until the stack ran out.
+    /// Serializing a property calls back into the hooked functions; without this guard the
+    /// first capture recurses until the stack runs out.
     static CAPTURING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -129,8 +128,7 @@ pub unsafe fn property_destroy_hook(property: *mut ()) -> i32 {
 }
 
 /// The serialization path a request takes on its way out. A `usersave` passes through here
-/// exactly once, where `property_destroy` sees it twice, which is what makes this the place
-/// to submit from.
+/// exactly once, where `property_destroy` sees it twice, so this is where scores are sent.
 #[crochet::hook("avs2-core.dll", "XCgsqzn00000b8")]
 pub unsafe fn property_mem_write_hook(property: *mut (), data: *mut u8, size: u32) -> i32 {
     if !property.is_null() {
@@ -166,16 +164,13 @@ unsafe fn process(property: *mut (), source: &str) -> Result<()> {
     let method = json_field(&text, "method");
     let mode = json_field(&text, "mode");
 
-    // A save is submitted from the write path only. It reaches property_destroy twice, and
-    // submitting from both would depend on deduplication rather than merely being checked
-    // by it.
+    // Submitted from the write path only: property_destroy sees the same save twice.
     let is_usersave = root.as_deref() == Some("eacnet")
         && method.as_deref() == Some("usergamedata_advanced")
         && mode.as_deref() == Some("usersave");
 
-    // Handled regardless of whether submission is on: with it off, the payload is still
-    // parsed, converted and reported, which is the only way to tell that the whole chain
-    // works before pointing it at a real account.
+    // Handled even with submission off, where the payload is still parsed, converted and
+    // reported.
     if is_usersave && source == "write" {
         handle_usersave(&json);
     }
@@ -240,9 +235,8 @@ fn dump_payload(
 
 /// Parses a save and submits whatever stage it carries.
 ///
-/// Nothing here returns an error to the caller: a save this fork cannot make sense of must
-/// not disturb a running game, so every failure is logged and, where it might be a score,
-/// written out for later.
+/// Returns nothing: a save that cannot be made sense of must not disturb a running game, so
+/// failures are logged and, where one might be a score, dumped.
 fn handle_usersave(json: &[u8]) {
     let envelope = match serde_json::from_slice::<Envelope>(json) {
         Ok(envelope) => envelope,
@@ -253,16 +247,15 @@ fn handle_usersave(json: &[u8]) {
         }
     };
 
-    // Every request says which game it came from, which is what this hook gates on --
-    // Konasute has no avs2-ea3.dll to read a boot node from.
+    // The game is identified per request; Konasute has no avs2-ea3.dll to read a boot node
+    // from.
     let info = &envelope.eacnet.info;
     if !info.game_id.is_empty() && info.game_id != "ddr" {
         debug!("Ignoring a usersave from '{}'", info.game_id);
         return;
     }
 
-    // Routing used a cheap text scan to get here. Now that the payload is properly parsed,
-    // confirm it really is what that scan claimed before acting on it.
+    // Routing here was a text scan; confirm against the parsed payload before acting.
     let request = &envelope.eacnet.request;
     if request.method != "usergamedata_advanced" {
         debug!(
@@ -326,10 +319,8 @@ fn claim(note: &Note) -> bool {
 
 /// Works one stage out and either sends it or reports what would have been sent.
 ///
-/// `api_key` is `None` when nothing covers this player, which together with
-/// `general.submit` being off is what makes a dry run. A dry run still parses, converts,
-/// validates and refuses exactly as a real run does -- only the POST is skipped -- so it is
-/// a genuine rehearsal rather than a different code path.
+/// `api_key` is `None` when nothing covers this player; that, or `general.submit` being off,
+/// makes a dry run, which differs from a real one only in skipping the POST.
 fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
     let converted = match scores::convert(note) {
         Ok(converted) => converted,
@@ -354,9 +345,8 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
         scores: vec![converted.score],
     };
 
-    // Flare takes no part in a score's identity on Tachi's side, so a rank outside the
-    // eleven it knows is dropped rather than made to refuse the score. Say so loudly: a
-    // report is all it would take to place it.
+    // Flare takes no part in a score's identity, so an unplaceable rank is dropped rather
+    // than refusing the score.
     if note.playing_flare != 0 && scores::flare(note).is_none() {
         warn!(
             "mcode {} reports flare {}, which is outside the ranks Tachi knows, so the score \
@@ -386,8 +376,7 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
     };
     let api_key = api_key.to_string();
 
-    // The game is already waiting on its own network call here; adding a blocking POST to
-    // that wait would show up as a stall on the save screen.
+    // A blocking POST would show up as a stall on the save screen.
     std::thread::spawn(move || match helpers::post(&TACHI_IMPORT_URL, &api_key, &import) {
         Ok(response) => {
             if response.get("success").and_then(|v| v.as_bool()) == Some(false) {
@@ -461,8 +450,8 @@ unsafe fn serialize(property: *mut (), json: bool) -> Option<Vec<u8>> {
     }
 }
 
-/// The name of the property's outermost node, read off the JSON rather than by walking
-/// nodes, so a root this fork has never heard of is still named correctly.
+/// The property's outermost node name, read off the JSON rather than by walking nodes, so an
+/// unknown root is still named correctly.
 fn root_name(text: &str) -> Option<String> {
     let start = text.find('"')? + 1;
     let end = text[start..].find('"')? + start;
@@ -473,14 +462,13 @@ fn root_name(text: &str) -> Option<String> {
 
 /// Reads `"key" : "value"` out of AVS's JSON output.
 ///
-/// Used only for routing and labelling, where a cheap scan beats deserializing a payload
-/// that is usually of no interest. The payload that matters is parsed properly with serde.
+/// For routing and labelling only; the payload that matters is parsed with serde.
 fn json_field(text: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let after = &text[text.find(&needle)? + needle.len()..];
 
-    // Only accept a string value belonging to this key: a quote must come after the colon
-    // and before the line ends, otherwise this key held an object, a number or nothing.
+    // Only a string value on this key's own line counts; anything else means the key held an
+    // object, a number or nothing.
     let colon = after.find(':')?;
     let value = &after[colon + 1..];
     let line_end = value.find('\n').unwrap_or(value.len());

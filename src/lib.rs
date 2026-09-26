@@ -20,9 +20,8 @@ use windows::core::BOOL;
 pub static CONFIGURATION: LazyLock<Configuration> = LazyLock::new(|| match Configuration::load() {
     Ok(configuration) => configuration,
     Err(err) => {
-        // Upstream exits the process here. Taking the game down over an unreadable config
-        // file would be a worse outcome than carrying on with defaults, so it is reported
-        // and the defaults are used -- submission simply stays off without an API key.
+        // An unreadable config must not take the game down. Without an API key the defaults
+        // simply leave submission off.
         error!("{err:#}");
         error!("Falling back to the default configuration");
         Configuration::default()
@@ -72,10 +71,9 @@ extern "system" fn DllMain(
                 return TRUE;
             }
 
-            // Unlike upstream, there is no avs2-ea3.dll on GRAND PRIX to hang a boot hook
-            // on, so the property hooks go in directly. chainload.txt loads us after AVS is
-            // up, which is what makes this safe. The game is identified per-request instead,
-            // from the `game_id` every payload carries.
+            // GRAND PRIX has no avs2-ea3.dll to hang a boot hook on, so the property hooks go
+            // in directly. chainload.txt loads this DLL after AVS is up, which is what makes
+            // that safe.
             if let Err(err) = hook::init() {
                 error!("{err:#}");
             }

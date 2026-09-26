@@ -70,9 +70,8 @@ extern "system" fn DllMain(
                 return TRUE;
             }
 
-            // GRAND PRIX has no avs2-ea3.dll to hang a boot hook on, so the property hooks go
-            // in directly. chainload.txt loads this DLL after AVS is up, which is what makes
-            // that safe.
+            // GRAND PRIX has no avs2-ea3.dll to hang a boot hook on, so the property hook goes
+            // in directly. That relies on being injected once avs2-core.dll is loaded.
             if let Err(err) = hook::init() {
                 error!("{err:#}");
             }

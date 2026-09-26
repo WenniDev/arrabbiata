@@ -207,7 +207,7 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 ## How it differs from upstream
 
 - **No `avs2-ea3.dll` on Konasute**, so upstream's boot hook has no target. The property hook is
-  installed directly from `DllMain` instead; `chainload.txt` loads us after AVS is up.
+  installed directly from `DllMain`, which relies on being injected once AVS is loaded.
 - **Game identity** is `VGP:J:A:A:<ext>` rather than SOUND VOLTEX's `KFC`. Builds from
   `2026012800` through `2026061700` have been observed, with `spec` seen as `A`, `B` and `C`.
 - **Cloudlink PB injection is gone.** It is a SOUND VOLTEX feature with no GRAND PRIX equivalent,

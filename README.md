@@ -61,11 +61,61 @@ request schemas:
 `usergamedata_send` records are Base64-encoded UTF-8 CSV inside `<d>` elements. Each row starts
 with a 64-bit hex bitmask, then a type name, then the fields: set bits in the mask give the
 column indices the fields land in, so a row is a sparse update of a 64-column record rather than
-a fixed layout.
+a fixed layout. That is the profile, not the scores.
 
-The score payload under `usersave` is the one piece nothing documents -- the server handler is a
-stub that acknowledges the request and discards it, and its schema leaves the body as `xs:any`.
-Establishing that layout is what this dump exists for.
+### The score payload
+
+Nothing documents this one -- the server handler is a stub that acknowledges the request and
+discards it, and its schema leaves the body as `xs:any` -- so it was established from captured
+traffic. It turns out to be a plain named-field node tree, not CSV:
+
+```
+eacnet/request/data/data/
+  mode = "usersave", refid, ddrcode, name, playside, playstyle, isgameover, ...
+  note[5]              <- a fixed five-slot array; only slot 0 is ever filled
+    stagenum  mcode  notetype  level  rank  clearkind
+    score  exscore  maxcombo  life  fastcount  slowcount
+    judge_marvelous  judge_perfect  judge_great  judge_good  judge_boo  judge_miss
+    judge_ok  judge_ng
+    calorie  ghost  ghostsize  opt_*  basename  title_b64  artist_b64
+    bpmMax  bpmMin  series  genreFlag  gr_voltage  gr_stream  gr_chaos  gr_freeze  gr_air
+    playing_flare  endtime  folder
+```
+
+Three things about it shape how phase 2 has to work:
+
+- **One stage per request.** `note` has five slots but only the first carries data, so a save
+  covers the stage just played rather than the session so far.
+- **The last stage is sent twice.** A save fires after each stage with `isgameover` false, and
+  once more at game over with `isgameover` true, repeating the final stage verbatim. Submitting
+  on every save would double-count it.
+- **`level` is a free checksum.** It restates the chart's difficulty rating, so a parse that
+  disagrees with Tachi's chart level for that `mcode` and `notetype` is wrong and should be
+  refused rather than submitted.
+
+### Field mappings, verified against captured play
+
+`mcode` is exactly Tachi's `inGameID` for `ddr`, confirmed independently by `basename`:
+
+| Played | Game sent | Tachi seed |
+| :-- | :-- | :-- |
+| AFRONOVA, BEGINNER, level 5 | `mcode` 124, `basename` "afro", `notetype` 0, `level` 5 | `inGameID` 124, `basename` "afro", BEGINNER is level 5 |
+| Abyss, EXPERT, level 10 | `mcode` 257, `basename` "abys", `notetype` 3, `level` 10 | `inGameID` 257, `basename` "abys", EXPERT is level 10 |
+
+So `matchType` is `inGameID`, and `notetype` follows Tachi's own difficulty order: 0 BEGINNER,
+1 BASIC, 2 DIFFICULT, 3 EXPERT, 4 CHALLENGE -- with 0 and 3 confirmed by play and the rest
+following from the ordering. `playstyle` 0 is SINGLE.
+
+Judgements map one to one, and EX score checks out against them: Marvelous and O.K. are worth 3,
+Perfect 2, Great 1. Both captures satisfy it, which is a useful sanity check on a parse.
+
+`clearkind` is a ladder, only partly known: **7** is a Good Full Combo and **8** a Great Full
+Combo. Values for fails, plain clears, LIFE4, and Perfect and Marvelous full combos have not been
+observed yet. Until they are, an unrecognized `clearkind` must be refused rather than guessed
+into a lamp.
+
+`rank` holds the grade, but its ladder is unmapped -- both captures graded AA+ and both sent 1.
+It is not needed: Tachi derives grade from score.
 
 ## Why a dump first
 
@@ -121,13 +171,19 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 ## Roadmap
 
 - [x] Phase 1 — dump e-amusement properties to disk
-- [ ] Establish the CSV record layout from real dumps
-- [ ] Confirm whether `cardmng` exists on Konasute, which decides how profiles are keyed
-- [ ] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, validating every record before
-      submitting it
+- [x] Establish the score payload layout from real play
+- [x] Confirm chart matching: `mcode` is Tachi's `inGameID`
+- [ ] Observe the rest of the `clearkind` ladder: fails, plain clears, LIFE4, Perfect and
+      Marvelous full combos
+- [ ] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
+      validate rather than submitting a guess
 
-Tachi has no `grandprix` version id for `ddr` yet — its versions are `a`, `a20`, `a20plus`, `a3`,
-`konaste` and `world` — so which one GRAND PRIX scores are filed under is still to be settled.
+There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and
+`ddrcode`, so profiles are keyed off those rather than off an E000 card number as upstream does.
+
+Tachi has no `grandprix` version id for `ddr` — its versions are `a`, `a20`, `a20plus`, `a3`,
+`konaste` and `world`. `konaste` is the natural fit for a Konasute title, but which one GRAND PRIX
+scores should be filed under is still to be settled.
 
 ## License
 

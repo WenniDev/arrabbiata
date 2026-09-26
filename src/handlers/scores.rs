@@ -9,8 +9,14 @@ use crate::types::tachi::{DIFFICULTIES, FLARES, ImportScore, Judgements, Lamp, O
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
-    UnknownDifficulty(i32),
+    UnknownNotetype(i32),
     UnknownPlaystyle(i32),
+    /// `notetype` and `playstyle` disagree about whether this was singles or doubles.
+    PlaystyleConflict {
+        notetype: i32,
+        from_notetype: &'static str,
+        playstyle: i32,
+    },
     ScoreOutOfRange(i64),
     /// No lamp can be established: the combo broke, and `clearkind` is a value this fork
     /// has never seen.
@@ -28,12 +34,23 @@ pub enum Refusal {
 impl std::fmt::Display for Refusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownDifficulty(notetype) => {
-                write!(f, "notetype {notetype} is outside the five known difficulties")
-            }
+            Self::UnknownNotetype(notetype) => write!(
+                f,
+                "notetype {notetype} names no chart this build knows \
+                 (0-4 are singles BEGINNER to CHALLENGE, 5-8 doubles BASIC to CHALLENGE)"
+            ),
             Self::UnknownPlaystyle(playstyle) => {
                 write!(f, "playstyle {playstyle} is neither SINGLE (0) nor DOUBLE (1)")
             }
+            Self::PlaystyleConflict {
+                notetype,
+                from_notetype,
+                playstyle,
+            } => write!(
+                f,
+                "notetype {notetype} is a {from_notetype} chart but playstyle says {}",
+                if *playstyle == 0 { "SP" } else { "DP" }
+            ),
             Self::ScoreOutOfRange(score) => {
                 write!(f, "score {score} is outside the 0 to 1,000,000 Tachi accepts")
             }
@@ -152,17 +169,41 @@ pub fn flare(note: &Note) -> Option<&'static str> {
         .and_then(|rank| FLARES.get(rank).copied())
 }
 
-pub fn convert(note: &Note) -> Result<Converted, Refusal> {
-    let difficulty = usize::try_from(note.notetype)
-        .ok()
-        .and_then(|index| DIFFICULTIES.get(index).copied())
-        .ok_or(Refusal::UnknownDifficulty(note.notetype))?;
+/// The chart a `notetype` names: both how it is played and how hard it is.
+///
+/// `notetype` runs straight through both playstyles rather than restarting, and doubles has
+/// no BEGINNER, which is why the ladder is nine values and not ten. Established from a
+/// doubles play reporting notetype 5 at level 3, matching the DP BASIC chart in Tachi's
+/// seeds -- reading it as a difficulty alone happened to work for singles and silently
+/// shifts everything by one for doubles.
+fn chart(notetype: i32) -> Option<(&'static str, &'static str)> {
+    let (playtype, difficulty) = match notetype {
+        0..=4 => ("SP", DIFFICULTIES[notetype as usize]),
+        // Doubles picks up where singles left off, at BASIC.
+        5..=8 => ("DP", DIFFICULTIES[(notetype - 4) as usize]),
+        _ => return None,
+    };
 
-    let playtype = match note.playstyle {
+    Some((playtype, difficulty))
+}
+
+pub fn convert(note: &Note) -> Result<Converted, Refusal> {
+    let (playtype, difficulty) =
+        chart(note.notetype).ok_or(Refusal::UnknownNotetype(note.notetype))?;
+
+    // playstyle says the same thing a second time, so require it to agree.
+    let expected = match note.playstyle {
         0 => "SP",
         1 => "DP",
         other => return Err(Refusal::UnknownPlaystyle(other)),
     };
+    if playtype != expected {
+        return Err(Refusal::PlaystyleConflict {
+            notetype: note.notetype,
+            from_notetype: playtype,
+            playstyle: note.playstyle,
+        });
+    }
 
     if !(0..=1_000_000).contains(&note.score) {
         return Err(Refusal::ScoreOutOfRange(note.score));
@@ -495,8 +536,8 @@ mod tests {
     #[test]
     fn out_of_range_inputs_are_refused() {
         assert_eq!(
-            convert(&Note { notetype: 5, ..afronova() }).err(),
-            Some(Refusal::UnknownDifficulty(5))
+            convert(&Note { notetype: 9, ..afronova() }).err(),
+            Some(Refusal::UnknownNotetype(9))
         );
         assert_eq!(
             convert(&Note { playstyle: 2, ..afronova() }).err(),
@@ -564,9 +605,65 @@ mod tests {
     }
 
     #[test]
-    fn doubles_are_reported_as_dp() {
-        let note = Note { playstyle: 1, ..afronova() };
-        assert_eq!(convert(&note).unwrap().playtype, "DP");
+    fn notetype_names_the_playstyle_as_well_as_the_difficulty() {
+        // BABY BABY GIMME YOUR LOVE on doubles BASIC, refused while notetype was read as a
+        // difficulty on its own. The level settles it: notetype 5 came with level 3, and
+        // DP BASIC is level 3 in Tachi's seeds where SP BASIC is 2.
+        let note = Note {
+            stagenum: 1,
+            mcode: 182,
+            notetype: 5,
+            level: 3,
+            rank: 5,
+            clearkind: 3,
+            score: 812_150,
+            exscore: 164,
+            maxcombo: 34,
+            judge_marvelous: 38,
+            judge_perfect: 16,
+            judge_great: 18,
+            judge_good: 1,
+            judge_miss: 7,
+            playstyle: 1,
+            endtime: 1_790_398_044_963,
+            ..Note::default()
+        };
+
+        let converted = convert(&note).expect("should convert");
+        assert_eq!(converted.playtype, "DP");
+        assert_eq!(converted.score.difficulty, "BASIC");
+        // (38 + 0) * 3 + 16 * 2 + 18 = 164
+        assert_eq!(converted.score.optional.ex_score, Some(164));
+    }
+
+    #[test]
+    fn the_notetype_ladder_runs_through_both_playstyles() {
+        let at = |notetype| {
+            let playstyle = if notetype >= 5 { 1 } else { 0 };
+            convert(&Note { notetype, playstyle, ..afronova() })
+                .map(|c| (c.playtype, c.score.difficulty))
+        };
+
+        assert_eq!(at(0), Ok(("SP", "BEGINNER")));
+        assert_eq!(at(4), Ok(("SP", "CHALLENGE")));
+        // Doubles picks up at BASIC: there is no doubles BEGINNER chart.
+        assert_eq!(at(5), Ok(("DP", "BASIC")));
+        assert_eq!(at(8), Ok(("DP", "CHALLENGE")));
+        assert_eq!(at(9), Err(Refusal::UnknownNotetype(9)));
+    }
+
+    #[test]
+    fn a_notetype_that_contradicts_playstyle_is_refused() {
+        // notetype 5 is a doubles chart; playstyle 0 claims singles.
+        let note = Note { notetype: 5, playstyle: 0, ..afronova() };
+        assert_eq!(
+            convert(&note).err(),
+            Some(Refusal::PlaystyleConflict {
+                notetype: 5,
+                from_notetype: "DP",
+                playstyle: 0
+            })
+        );
     }
 
     /// End to end over a captured payload: the game's own JSON in, Tachi's JSON out. This

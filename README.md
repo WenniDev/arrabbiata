@@ -58,9 +58,14 @@ this build has never seen, the stage is refused.
 Also refused: a difficulty or playstyle out of range, a score outside what Tachi accepts, and a
 full combo whose `maxcombo` does not account for its judgements.
 
-Flare is the one metric dropped on purpose. How `playing_flare` encodes a rank has never been
-observed, so a non-zero value warns and the score goes without it rather than being mapped on a
-guess. **If you see that warning, please report the value** — it is all that is needed to add it.
+Flare is sent when there is one. `playing_flare` indexes Tachi's own ladder — 1 is Flare I, 10 is
+Flare EX — and 0 is left out, since Tachi already defaults to it. A rank outside that range warns
+and the score goes without it: Flare is optional and takes no part in a score's identity, so an
+unplaceable rank should not cost the whole score. **If you see that warning, please report the
+value.**
+
+Floating Flare needs no special handling. It walks down from EX until a rank passes, and the
+payload reports the rank that did.
 
 ### Version
 
@@ -225,8 +230,8 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 - [x] Confirm chart matching: `mcode` is Tachi's `inGameID`
 - [x] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
       validate rather than submitting a guess
+- [x] Map Flare: `playing_flare` indexes Tachi's ladder directly
 - [ ] Observe the two remaining `clearkind` values: an assisted clear and a LIFE4 clear
-- [ ] Map Flare: needs one play at a non-zero Flare rank
 - [ ] Confirm whether `meta.version` should be set, against a real import
 
 There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and

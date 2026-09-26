@@ -354,13 +354,13 @@ fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
         scores: vec![converted.score],
     };
 
-    // Flare is an optional Tachi metric, but how the game encodes `playing_flare` has never
-    // been seen non-zero, so it is left out rather than mapped on a guess. Say so loudly:
-    // this is the one metric being dropped on purpose, and a report unblocks it.
-    if note.playing_flare != 0 {
+    // Flare takes no part in a score's identity on Tachi's side, so a rank outside the
+    // eleven it knows is dropped rather than made to refuse the score. Say so loudly: a
+    // report is all it would take to place it.
+    if note.playing_flare != 0 && scores::flare(note).is_none() {
         warn!(
-            "mcode {} was played at flare {}, which this build cannot map yet, so the score \
-             is submitted without it. Please report this value.",
+            "mcode {} reports flare {}, which is outside the ranks Tachi knows, so the score \
+             goes without it. Please report this value.",
             note.mcode, note.playing_flare
         );
     }

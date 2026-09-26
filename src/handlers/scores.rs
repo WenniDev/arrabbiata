@@ -17,14 +17,7 @@ pub enum Refusal {
         playstyle: i32,
     },
     ScoreOutOfRange(i64),
-    /// No lamp can be established: the combo broke, and `clearkind` is not a known value.
     UnknownClearKind(i32),
-    /// The judgements and `clearkind` disagree about what happened.
-    LampConflict {
-        from_judgements: Option<Lamp>,
-        from_clearkind: Lamp,
-        clearkind: i32,
-    },
     /// A full combo whose `maxcombo` does not account for the notes hit.
     ComboMismatch { maxcombo: i64, expected: i64 },
 }
@@ -54,23 +47,9 @@ impl std::fmt::Display for Refusal {
             }
             Self::UnknownClearKind(clearkind) => write!(
                 f,
-                "the combo broke, so the lamp must come from clearkind, and {clearkind} is not a value this build knows \
-                 (known: 1 FAILED, 2 ASSIST, 3 CLEAR, 6 LIFE4, 7 FULL COMBO, 8 GREAT FULL COMBO)"
+                "clearkind {clearkind} names no lamp this build knows \
+                 (1 FAILED, 2 ASSIST, 3 CLEAR, 6 LIFE4, 7 to 10 the full combos)"
             ),
-            Self::LampConflict {
-                from_judgements,
-                from_clearkind,
-                clearkind,
-            } => match from_judgements {
-                Some(judged) => write!(
-                    f,
-                    "the judgements say {judged} but clearkind {clearkind} says {from_clearkind}"
-                ),
-                None => write!(
-                    f,
-                    "the combo broke, but clearkind {clearkind} claims {from_clearkind}"
-                ),
-            },
             Self::ComboMismatch { maxcombo, expected } => write!(
                 f,
                 "a full combo with maxcombo {maxcombo}, where its judgements account for {expected}"
@@ -84,10 +63,8 @@ pub struct Converted {
     pub score: ImportScore,
 }
 
-/// The known `clearkind` values. Anything else is refused.
-///
-/// Deliberately a table and not a formula: these follow no offset from Tachi's lamp order.
-fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
+/// The lamp a `clearkind` names. Anything not listed is refused.
+fn lamp(clearkind: i32) -> Option<Lamp> {
     match clearkind {
         1 => Some(Lamp::Failed),
         2 => Some(Lamp::Assist),
@@ -95,56 +72,9 @@ fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
         6 => Some(Lamp::Life4),
         7 => Some(Lamp::FullCombo),
         8 => Some(Lamp::GreatFullCombo),
+        9 => Some(Lamp::PerfectFullCombo),
+        10 => Some(Lamp::MarvelousFullCombo),
         _ => None,
-    }
-}
-
-/// The full-combo tier, which the judgements determine on their own: the worst judgement
-/// present names the lamp. Returns `None` when the combo broke, which the judgements cannot
-/// tell apart from a fail.
-fn lamp_from_judgements(note: &Note) -> Option<Lamp> {
-    if note.combo_breaks() != 0 {
-        return None;
-    }
-
-    Some(if note.judge_good > 0 {
-        Lamp::FullCombo
-    } else if note.judge_great > 0 {
-        Lamp::GreatFullCombo
-    } else if note.judge_perfect > 0 {
-        Lamp::PerfectFullCombo
-    } else {
-        Lamp::MarvelousFullCombo
-    })
-}
-
-/// Establishes the lamp from both sources and requires them to agree.
-///
-/// The judgements are authoritative for full combos, including the tiers with no known
-/// `clearkind`. `clearkind` is authoritative for everything else, because judgements alone
-/// cannot separate a fail from a clear.
-fn lamp(note: &Note) -> Result<Lamp, Refusal> {
-    let from_clearkind = lamp_from_clearkind(note.clearkind);
-
-    match lamp_from_judgements(note) {
-        Some(judged) => match from_clearkind {
-            Some(known) if known != judged => Err(Refusal::LampConflict {
-                from_judgements: Some(judged),
-                from_clearkind: known,
-                clearkind: note.clearkind,
-            }),
-            // An unrecognized clearkind is fine here: the judgements already settled it.
-            _ => Ok(judged),
-        },
-        None => match from_clearkind {
-            Some(known) if known.is_full_combo() => Err(Refusal::LampConflict {
-                from_judgements: None,
-                from_clearkind: known,
-                clearkind: note.clearkind,
-            }),
-            Some(known) => Ok(known),
-            None => Err(Refusal::UnknownClearKind(note.clearkind)),
-        },
     }
 }
 
@@ -166,8 +96,7 @@ pub fn flare(note: &Note) -> Option<&'static str> {
 /// The chart a `notetype` names: both how it is played and how hard it is.
 ///
 /// `notetype` runs straight through both playstyles rather than restarting, and doubles has
-/// no BEGINNER, so the ladder is nine values and not ten. Reading it as a difficulty on its
-/// own works for singles and shifts every doubles chart by one.
+/// no BEGINNER, so the ladder is nine values and not ten.
 fn chart(notetype: i32) -> Option<(&'static str, &'static str)> {
     let (playtype, difficulty) = match notetype {
         0..=4 => ("SP", DIFFICULTIES[notetype as usize]),
@@ -201,7 +130,8 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
         return Err(Refusal::ScoreOutOfRange(note.score));
     }
 
-    let lamp = lamp(note)?;
+    let lamp =
+        lamp(note.clearkind).ok_or(Refusal::UnknownClearKind(note.clearkind))?;
 
     // A full combo means every note was part of the combo, so maxcombo has to equal the
     // judgements that make one up.
@@ -361,36 +291,21 @@ mod tests {
     }
 
     #[test]
-    fn judgements_name_the_full_combo_tier() {
-        let tiers = [
-            // clearkind moves with the tier, or the cross-check refuses the pair.
-            (Note { judge_good: 1, clearkind: 7, ..afronova() }, Lamp::FullCombo),
-            (afronova(), Lamp::GreatFullCombo),
-            (Note { judge_great: 0, clearkind: 9, ..afronova() }, Lamp::PerfectFullCombo),
-            (
-                Note { judge_great: 0, judge_perfect: 0, clearkind: 10, ..afronova() },
-                Lamp::MarvelousFullCombo,
-            ),
-        ];
+    fn clearkind_names_the_lamp() {
+        let at = |clearkind| convert(&Note { clearkind, ..afronova() }).map(|c| c.score.lamp);
 
-        for (note, expected) in tiers {
-            // maxcombo has to keep up, or the combo check fires first.
-            let note = Note { maxcombo: note.combo_notes(), ..note };
-            assert_eq!(convert(&note).map(|c| c.score.lamp), Ok(expected));
+        assert_eq!(at(1), Ok(Lamp::Failed));
+        assert_eq!(at(2), Ok(Lamp::Assist));
+        assert_eq!(at(3), Ok(Lamp::Clear));
+        assert_eq!(at(6), Ok(Lamp::Life4));
+        assert_eq!(at(7), Ok(Lamp::FullCombo));
+        assert_eq!(at(8), Ok(Lamp::GreatFullCombo));
+        assert_eq!(at(9), Ok(Lamp::PerfectFullCombo));
+        assert_eq!(at(10), Ok(Lamp::MarvelousFullCombo));
+
+        for unknown in [0, 4, 5, 11] {
+            assert_eq!(at(unknown), Err(Refusal::UnknownClearKind(unknown)));
         }
-    }
-
-    #[test]
-    fn perfect_and_marvelous_combos_pass_without_a_known_clearkind() {
-        // clearkind 9 and 10 are not known values; the judgements settle these on their own.
-        let note = Note { judge_great: 0, clearkind: 9, maxcombo: 103, ..afronova() };
-        assert_eq!(convert(&note).map(|c| c.score.lamp), Ok(Lamp::PerfectFullCombo));
-    }
-
-    #[test]
-    fn a_broken_combo_with_an_unknown_clearkind_is_refused() {
-        let note = Note { clearkind: 5, ..arrabbiata() };
-        assert_eq!(convert(&note).err(), Some(Refusal::UnknownClearKind(5)));
     }
 
     /// An assisted clear, clearkind 2.
@@ -446,23 +361,6 @@ mod tests {
         assert_eq!(converted.score.lamp, Lamp::Life4);
         // (242 + 0) * 3 + 163 * 2 + 105 = 1157
         assert_eq!(converted.score.optional.ex_score, Some(1157));
-    }
-
-    #[test]
-    fn disagreement_between_judgements_and_clearkind_is_refused() {
-        // Judgements say a Great Full Combo, clearkind says a plain clear.
-        let note = Note { clearkind: 3, ..afronova() };
-        assert!(matches!(
-            convert(&note).err(),
-            Some(Refusal::LampConflict { from_judgements: Some(Lamp::GreatFullCombo), .. })
-        ));
-
-        // The combo broke, but clearkind claims a full combo.
-        let note = Note { clearkind: 7, ..arrabbiata() };
-        assert!(matches!(
-            convert(&note).err(),
-            Some(Refusal::LampConflict { from_judgements: None, .. })
-        ));
     }
 
     #[test]

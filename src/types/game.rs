@@ -42,8 +42,7 @@ pub struct Eacnet {
     pub info: Info,
 }
 
-/// Identifies the game and build. The hook gates on this: Konasute has no `avs2-ea3.dll` to
-/// read a boot node from.
+/// Identifies the game and build. The hook gates on `game_id`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Info {
     #[serde(default)]
@@ -71,8 +70,6 @@ pub struct RequestData {
 pub struct UserSave {
     #[serde(default)]
     pub mode: String,
-    /// Identifies the player. Konasute has no `cardmng`, so profiles key off this rather than
-    /// off a card number.
     #[serde(default)]
     pub refid: String,
     #[serde(default)]
@@ -86,7 +83,7 @@ pub struct UserSave {
     pub note: OneOrMany<Note>,
 }
 
-/// One stage's result. Unfilled slots arrive zeroed and are skipped as empty.
+/// One stage's result.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Note {
     #[serde(default)]
@@ -98,8 +95,7 @@ pub struct Note {
     /// doubles BASIC to CHALLENGE.
     #[serde(default)]
     pub notetype: i32,
-    /// The chart's difficulty rating, which Tachi's seeds hold as well, so it cross-checks
-    /// that a parse landed on the right chart.
+    /// The chart's difficulty rating.
     #[serde(default)]
     pub level: i32,
     // `rank` is also present -- the grade, 0 AAA down to 15 E -- and is not modelled: Tachi
@@ -124,17 +120,11 @@ pub struct Note {
     pub judge_great: i64,
     #[serde(default)]
     pub judge_good: i64,
-    /// Always zero in practice, including on plays with misses. Counted as combo-breaking
-    /// anyway, so a non-zero value fails safe.
-    #[serde(default)]
-    pub judge_boo: i64,
     #[serde(default)]
     pub judge_miss: i64,
     #[serde(default)]
     pub judge_ok: i64,
-    /// Failed freeze arrows. Also always zero, and also treated as combo-breaking.
-    #[serde(default)]
-    pub judge_ng: i64,
+    // `judge_boo` and `judge_ng` are also present, and always zero. Not modelled.
     /// 0 is SINGLE, 1 is DOUBLE.
     #[serde(default)]
     pub playstyle: i32,
@@ -151,12 +141,6 @@ impl Note {
     /// An unused note slot: zeroed rather than absent.
     pub fn is_empty(&self) -> bool {
         self.stagenum <= 0 || self.mcode == 0
-    }
-
-    /// Judgements that break a combo. `judge_boo` and `judge_ng` are always zero in
-    /// practice; including them fails safe.
-    pub fn combo_breaks(&self) -> i64 {
-        self.judge_miss + self.judge_boo + self.judge_ng
     }
 
     /// Judgements that make up a combo. `judge_ok` is not one of them.

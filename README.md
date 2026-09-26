@@ -157,19 +157,26 @@ misses and a failed-out play with seventeen, so they map to nothing on Tachi's s
 | Value | Lamp | Seen on |
 | :-- | :-- | :-- |
 | 1 | `FAILED` | a bail-out at score 0, and a full play that died at 814,710 |
+| 2 | `ASSIST` | `opt_cut`, `opt_freeze` and `opt_jump` all 1, on a normal gauge |
 | 3 | `CLEAR` | 877,490 with 11 misses |
 | 6 | `LIFE4` | 909,980 with 2 misses, `life` 4 and `opt_gauge` 2 |
 | 7 | `FULL COMBO` | 1 good, no misses |
 | 8 | `GREAT FULL COMBO` | no goods, 5 greats, no misses |
 
-2, 4, 5 and anything above 8 remain unobserved, so an unrecognized value is refused rather than
-guessed into a lamp. `clearkind` is *not* Tachi's lamp index offset by a constant: that was the
-obvious guess from the two full-combo values, the failed play disproved it, and LIFE4 landing on
-6 rather than 4 rules out any other simple offset.
+4, 5 and anything above 8 remain unobserved — 9 and 10 are presumably the Perfect and Marvelous
+full combos, which the judgements settle on their own anyway. An unrecognized value is refused
+rather than guessed into a lamp. `clearkind` is *not* Tachi's lamp index offset by a constant:
+that was the obvious guess from the two full-combo values, the failed play disproved it, and
+LIFE4 landing on 6 rather than 4 rules out any other simple offset.
 
-A LIFE4 play also reports `life` as 4 where every other capture has -1, and `opt_gauge` as 2.
-Neither is used. One capture is not enough to tell whether `life` counts the gauge's lives or the
-ones left at the end, and gating on the wrong reading would refuse real scores.
+Each of these was found the same way: the hook refused a play it could not account for, wrote the
+payload out, and the payload explained itself. `life`, `opt_gauge`, `opt_cut`, `opt_freeze` and
+`opt_jump` all corroborated a value, and none of them is used. One capture cannot say whether
+`life` counts the gauge's lives or the ones left at the end, nor which assists are enough to make
+a play assisted, and gating on the wrong reading would refuse real scores.
+
+Tachi has no lamp for a RISKY clear. A RISKY full combo is still a full combo, which the
+judgements settle; a RISKY clear with misses has no better answer than `CLEAR`.
 
 `rank` is the grade as an index into Tachi's own grade list, descending: 0 is AAA, 1 AA+, 4 A+,
 15 E. It is not needed, since Tachi derives grade from score, and it would make a poor
@@ -237,7 +244,7 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 - [x] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
       validate rather than submitting a guess
 - [x] Map Flare: `playing_flare` indexes Tachi's ladder directly
-- [ ] Observe the last common `clearkind` value: an assisted clear
+- [x] Observe the common `clearkind` ladder: FAILED, ASSIST, CLEAR, LIFE4 and the full combos
 - [ ] Confirm whether `meta.version` should be set, against a real import
 
 There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and

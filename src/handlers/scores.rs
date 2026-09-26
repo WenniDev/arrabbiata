@@ -5,7 +5,7 @@
 //! a missing one, and the dump turns each refusal into something that can be diagnosed.
 
 use crate::types::game::Note;
-use crate::types::tachi::{DIFFICULTIES, ImportScore, Judgements, Lamp, Optional};
+use crate::types::tachi::{DIFFICULTIES, FLARES, ImportScore, Judgements, Lamp, Optional};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
@@ -133,6 +133,22 @@ fn lamp(note: &Note) -> Result<Lamp, Refusal> {
     }
 }
 
+/// The Flare rank reached, if any.
+///
+/// Flare is optional on Tachi's side and takes no part in a score's identity, so a rank this
+/// build cannot place is dropped rather than made to refuse an otherwise good score. The
+/// caller warns when that happens.
+pub fn flare(note: &Note) -> Option<&'static str> {
+    // Nothing to send for a play without a Flare: Tachi already defaults to 0.
+    if note.playing_flare <= 0 {
+        return None;
+    }
+
+    usize::try_from(note.playing_flare)
+        .ok()
+        .and_then(|rank| FLARES.get(rank).copied())
+}
+
 pub fn convert(note: &Note) -> Result<Converted, Refusal> {
     let difficulty = usize::try_from(note.notetype)
         .ok()
@@ -191,6 +207,7 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
                 miss: note.judge_miss,
             },
             optional: Optional {
+                flare: flare(note),
                 // Tachi rejects a non-positive exScore rather than storing zero.
                 ex_score: (note.exscore > 0).then_some(note.exscore),
                 fast: Some(note.fastcount),
@@ -424,6 +441,61 @@ mod tests {
             convert(&Note { score: 1_000_001, ..afronova() }).err(),
             Some(Refusal::ScoreOutOfRange(1_000_001))
         );
+    }
+
+    /// 3y3s on EXPERT 17, cleared at Flare II under Floating Flare -- which walks down from
+    /// EX until a rank passes, and reports the one that did.
+    #[test]
+    fn a_flare_rank_indexes_tachis_own_ladder() {
+        let note = Note {
+            stagenum: 1,
+            mcode: 38_546,
+            notetype: 3,
+            level: 17,
+            rank: 8,
+            clearkind: 3,
+            score: 710_110,
+            exscore: 1055,
+            maxcombo: 287,
+            fastcount: 15,
+            slowcount: 601,
+            judge_marvelous: 105,
+            judge_perfect: 158,
+            judge_great: 415,
+            judge_good: 43,
+            judge_ok: 3,
+            judge_miss: 6,
+            playing_flare: 2,
+            endtime: 1_790_392_638_683,
+            ..Note::default()
+        };
+
+        let converted = convert(&note).expect("should convert");
+        assert_eq!(converted.score.optional.flare, Some("II"));
+        assert_eq!(converted.score.lamp, Lamp::Clear);
+        // (105 + 3) * 3 + 158 * 2 + 415 = 1055
+        assert_eq!(converted.score.optional.ex_score, Some(1055));
+    }
+
+    #[test]
+    fn the_flare_ladder_runs_from_none_to_ex() {
+        let at = |rank| flare(&Note { playing_flare: rank, ..afronova() });
+
+        // Flare 0 is Tachi's own default, so there is nothing to send.
+        assert_eq!(at(0), None);
+        assert_eq!(at(1), Some("I"));
+        assert_eq!(at(9), Some("IX"));
+        assert_eq!(at(10), Some("EX"));
+    }
+
+    #[test]
+    fn a_flare_rank_beyond_the_ladder_is_dropped_not_refused() {
+        // Flare is optional and takes no part in a score's identity, so an unplaceable rank
+        // must not cost the whole score.
+        let note = Note { playing_flare: 11, ..afronova() };
+        let converted = convert(&note).expect("the score should still convert");
+        assert_eq!(converted.score.optional.flare, None);
+        assert_eq!(converted.score.score, 981_120);
     }
 
     #[test]

@@ -62,6 +62,13 @@ impl Serialize for Lamp {
     }
 }
 
+/// Tachi's Flare ranks, which `playing_flare` indexes directly: a play cleared at Flare II
+/// sends 2. Confirmed on a Floating Flare clear, where the game walks down from EX until
+/// something passes and reports the rank that did.
+pub const FLARES: [&str; 11] = [
+    "0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "EX",
+];
+
 /// Tachi's fixed difficulty order for `ddr`, which `notetype` indexes directly.
 pub const DIFFICULTIES: [&str; 5] = [
     "BEGINNER",
@@ -122,6 +129,9 @@ pub struct Judgements {
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Optional {
+    /// Left out for a play without one: Tachi already defaults to Flare 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flare: Option<&'static str>,
     /// Tachi validates this with `isPositiveInteger`, so a zero would be rejected outright
     /// rather than stored as zero. It is left out instead.
     ///
@@ -139,7 +149,8 @@ pub struct Optional {
 
 impl Optional {
     pub fn is_empty(&self) -> bool {
-        self.ex_score.is_none()
+        self.flare.is_none()
+            && self.ex_score.is_none()
             && self.fast.is_none()
             && self.slow.is_none()
             && self.max_combo.is_none()

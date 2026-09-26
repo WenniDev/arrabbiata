@@ -156,14 +156,20 @@ misses and a failed-out play with seventeen, so they map to nothing on Tachi's s
 
 | Value | Lamp | Seen on |
 | :-- | :-- | :-- |
-| 1 | `FAILED` | score 0, 17 misses, bailed out |
+| 1 | `FAILED` | a bail-out at score 0, and a full play that died at 814,710 |
 | 3 | `CLEAR` | 877,490 with 11 misses |
+| 6 | `LIFE4` | 909,980 with 2 misses, `life` 4 and `opt_gauge` 2 |
 | 7 | `FULL COMBO` | 1 good, no misses |
 | 8 | `GREAT FULL COMBO` | no goods, 5 greats, no misses |
 
-2, 4, 5, 6 and anything above 8 remain unobserved, so an unrecognized value is refused rather
-than guessed into a lamp. Note that `clearkind` is *not* Tachi's lamp index offset by a constant
--- that was the obvious guess from the two full-combo values, and the failed play disproved it.
+2, 4, 5 and anything above 8 remain unobserved, so an unrecognized value is refused rather than
+guessed into a lamp. `clearkind` is *not* Tachi's lamp index offset by a constant: that was the
+obvious guess from the two full-combo values, the failed play disproved it, and LIFE4 landing on
+6 rather than 4 rules out any other simple offset.
+
+A LIFE4 play also reports `life` as 4 where every other capture has -1, and `opt_gauge` as 2.
+Neither is used. One capture is not enough to tell whether `life` counts the gauge's lives or the
+ones left at the end, and gating on the wrong reading would refuse real scores.
 
 `rank` is the grade as an index into Tachi's own grade list, descending: 0 is AAA, 1 AA+, 4 A+,
 15 E. It is not needed, since Tachi derives grade from score, and it would make a poor
@@ -231,7 +237,7 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 - [x] Phase 2 — parse and submit to Tachi as `ddr:SP` / `ddr:DP`, refusing anything that does not
       validate rather than submitting a guess
 - [x] Map Flare: `playing_flare` indexes Tachi's ladder directly
-- [ ] Observe the two remaining `clearkind` values: an assisted clear and a LIFE4 clear
+- [ ] Observe the last common `clearkind` value: an assisted clear
 - [ ] Confirm whether `meta.version` should be set, against a real import
 
 There is no `cardmng` on Konasute. The player is identified in the payload itself, by `refid` and

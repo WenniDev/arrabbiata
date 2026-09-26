@@ -65,8 +65,16 @@ impl Logger {
 
 impl Write for Logger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // We share a console with whatever loaded us, and konasute_chainload's other
+        // passengers put it in virtual-terminal mode. There a bare line feed moves down a
+        // row without returning to column 0, so every line would start where the previous
+        // one ended. Expanding to CRLF is safe either way round: a console that does return
+        // on its own treats the extra carriage return as a no-op.
+        //
+        // Only the console needs this. The log file keeps plain line feeds, and is written
+        // the original bytes so the returned count stays honest.
         // Ignore the result of the write to stdout, since it's not really important
-        let _ = self.console.write(buf);
+        let _ = self.console.write_all(&to_crlf(buf));
         self.file.write(buf)
     }
 
@@ -75,6 +83,19 @@ impl Write for Logger {
         let _ = self.console.flush();
         self.file.flush()
     }
+}
+
+/// Gives every line feed a carriage return, leaving ones that already have a pair alone.
+fn to_crlf(buf: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(buf.len() + 8);
+    for &byte in buf {
+        if byte == b'\n' && out.last() != Some(&b'\r') {
+            out.push(b'\r');
+        }
+        out.push(byte);
+    }
+
+    out
 }
 
 struct Padded<T> {
@@ -156,4 +177,31 @@ fn colored_level(level: Level) -> Styled<&'static str> {
     };
 
     text.styled(style)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_crlf;
+
+    #[test]
+    fn bare_line_feeds_get_a_carriage_return() {
+        assert_eq!(to_crlf(b"one\ntwo\n"), b"one\r\ntwo\r\n");
+    }
+
+    #[test]
+    fn pairs_that_already_exist_are_left_alone() {
+        assert_eq!(to_crlf(b"one\r\ntwo\r\n"), b"one\r\ntwo\r\n");
+    }
+
+    #[test]
+    fn multi_line_payloads_are_handled_throughout() {
+        // A dry run prints a whole indented JSON import through this.
+        assert_eq!(to_crlf(b"{\n  \"a\": 1\n}\n"), b"{\r\n  \"a\": 1\r\n}\r\n");
+    }
+
+    #[test]
+    fn text_without_line_feeds_is_unchanged() {
+        assert_eq!(to_crlf(b"no newline here"), b"no newline here");
+        assert_eq!(to_crlf(b""), b"");
+    }
 }

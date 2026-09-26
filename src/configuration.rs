@@ -76,8 +76,8 @@ pub struct TachiConfiguration {
     pub import: String,
     #[serde(default)]
     pub api_key: Option<String>,
-    /// Tachi has no `grandprix` version for `ddr`. Left unset so Tachi resolves charts
-    /// across versions rather than filing scores under one that was guessed at.
+    /// Unset so Tachi resolves charts across versions; it has no `grandprix` version for
+    /// `ddr`.
     #[serde(default)]
     pub version: Option<String>,
 }
@@ -104,12 +104,11 @@ pub struct ProfileConfiguration {
 pub struct DumpConfiguration {
     #[serde(default = "default_directory")]
     pub directory: PathBuf,
-    /// Dump every property the hooks see. This is how the protocol was worked out; leave it
-    /// off for normal play.
+    /// Dump every property the hooks see. Off for normal play.
     #[serde(default)]
     pub all: bool,
-    /// Always dump a payload that could not be turned into a score. Each refusal is then
-    /// something that can be diagnosed rather than a score silently lost.
+    /// Always dump a payload that could not be turned into a score, so a refusal can be
+    /// diagnosed instead of a score being silently lost.
     #[serde(default = "default_true")]
     pub on_refusal: bool,
     #[serde(default = "default_true")]
@@ -151,9 +150,8 @@ fn default_timeout() -> u64 {
 }
 
 fn default_base_url() -> String {
-    // Kamaitachi's canonical host. The older kamaitachi.xyz still answers, but with a 308
-    // to this one, and a cross-host redirect drops the Authorization header -- so inheriting
-    // upstream's URL meant a default install could never authenticate.
+    // Kamaitachi's canonical host. kamaitachi.xyz answers with a 308 to this one, and a
+    // cross-host redirect drops the Authorization header, so it can never authenticate.
     "https://kamai.tachi.ac/".to_string()
 }
 

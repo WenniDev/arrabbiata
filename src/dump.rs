@@ -1,8 +1,7 @@
 //! Writing captured payloads to disk.
 //!
-//! This is what worked the protocol out, and it stays in for two reasons: `dump.all` turns
-//! discovery back on when a future game version changes something, and `dump.on_refusal`
-//! means a payload the score handler could not account for is preserved rather than lost.
+//! `dump.all` captures every property, for when a game version changes something.
+//! `dump.on_refusal` preserves a payload the score handler could not account for.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

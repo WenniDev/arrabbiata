@@ -1,25 +1,18 @@
-// Only the entries this fork actually calls are declared. Upstream mikado also maps
-// property_node_name (XCgsqzn00000a7), which is present and verified on GRAND PRIX too --
-// re-declare it here if a later change needs to read node names.
+// Only the entries this fork actually calls are declared, because the generated bindings
+// warn on anything unused. The rest of upstream's mapping is verified present on GRAND
+// PRIX and can be re-declared as needed:
+//
+//   XCgsqzn000009d  property_clear_error
+//   XCgsqzn00000a1  property_search
+//   XCgsqzn00000a7  property_node_name
+//   XCgsqzn00000af  property_node_refer
+//   XCgsqzn00000b7  property_mem_read
 #[crochet::load("avs2-core.dll")]
 extern "C" {
     #[symbol("XCgsqzn000009a")]
     pub fn property_set_flag(property: *mut (), set_flags: u32, clear_flags: u32) -> u32;
-    #[symbol("XCgsqzn000009d")]
-    pub fn property_clear_error(property: *mut ()) -> *mut ();
     #[symbol("XCgsqzn000009f")]
     pub fn property_query_size(property: *const ()) -> i32;
-    #[symbol("XCgsqzn00000a1")]
-    pub fn property_search(property: *const (), node: *const (), path: *const u8) -> *mut ();
-    #[symbol("XCgsqzn00000af")]
-    pub fn property_node_refer(
-        property: *const (),
-        node: *const (),
-        path: *const u8,
-        node_type: NodeType,
-        data: *mut (),
-        size: u32,
-    ) -> i32;
     #[symbol("XCgsqzn00000b8")]
     pub fn property_mem_write(property: *mut (), data: *mut u8, size: u32) -> i32;
 }

@@ -2,6 +2,5 @@
 /Cargo.lock
 /.idea
 
-# Produced at runtime next to the DLL
+# Produced at runtime
 /arrabbiata.log
-/arrabbiata-dumps

@@ -9,13 +9,11 @@ A stage is submitted only when everything about it adds up. Otherwise it is refu
 reason logged, naming the value that could not be placed — a wrong score submitted silently is
 worse than a missing one.
 
-The lamp has to agree with itself. Judgements settle the full-combo tier, since the worst
-judgement present names it; `clearkind` settles everything else, because judgements alone cannot
-separate a fail from a clear. If the two disagree, or the combo broke and `clearkind` is a value
-this build has never seen, the stage is refused.
+The lamp comes from `clearkind` alone, through the table below. A value not in it is refused.
 
-Also refused: a difficulty or playstyle out of range, a score outside what Tachi accepts, and a
-full combo whose `maxcombo` does not account for its judgements.
+Also refused: a difficulty or playstyle out of range, the two disagreeing about singles or
+doubles, a score outside what Tachi accepts, and a full combo whose `maxcombo` does not account
+for its judgements.
 
 Flare is sent when there is one. `playing_flare` indexes Tachi's own ladder — 1 is Flare I, 10 is
 Flare EX — and 0 is left out, since Tachi already defaults to it. A rank outside that range warns
@@ -142,20 +140,19 @@ misses and a failed-out play with seventeen, so they map to nothing on Tachi's s
 | 7 | `FULL COMBO` | 1 good, no misses |
 | 8 | `GREAT FULL COMBO` | no goods, 5 greats, no misses |
 
-4, 5 and anything above 8 remain unobserved — 9 and 10 are presumably the Perfect and Marvelous
-full combos, which the judgements settle on their own anyway. An unrecognized value is refused
-rather than guessed into a lamp. `clearkind` is *not* Tachi's lamp index offset by a constant:
-that was the obvious guess from the two full-combo values, the failed play disproved it, and
-LIFE4 landing on 6 rather than 4 rules out any other simple offset.
+| 9 | `PERFECT FULL COMBO` | continues the run above; unobserved |
+| 10 | `MARVELOUS FULL COMBO` | continues the run above; unobserved |
 
-Each of these was found the same way: the hook refused a play it could not account for, wrote the
-payload out, and the payload explained itself. `life`, `opt_gauge`, `opt_cut`, `opt_freeze` and
-`opt_jump` all corroborated a value, and none of them is used. One capture cannot say whether
-`life` counts the gauge's lives or the ones left at the end, nor which assists are enough to make
-a play assisted, and gating on the wrong reading would refuse real scores.
+4 and 5 remain unobserved and are refused. `clearkind` is *not* Tachi's lamp index offset by a
+constant — LIFE4 is fourth in Tachi's order and lands on 6 — so the table stays a table.
 
-Tachi has no lamp for a RISKY clear. A RISKY full combo is still a full combo, which the
-judgements settle; a RISKY clear with misses has no better answer than `CLEAR`.
+A LIFE4 play also reports `life` as 4 where every other capture has -1, and an assisted one sets
+`opt_cut`, `opt_freeze` and `opt_jump` where every other capture leaves them at 0. None of these
+is used: one capture cannot say whether `life` counts the gauge's lives or the ones left at the
+end, nor which assists are enough to make a play assisted.
+
+Tachi has no lamp for a RISKY clear, and the game reports one under the same `clearkind` values
+as any other gauge.
 
 `rank` is the grade as an index into Tachi's own grade list, descending: 0 is AAA, 1 AA+, 4 A+,
 15 E. It is not needed, since Tachi derives grade from score, and it would make a poor

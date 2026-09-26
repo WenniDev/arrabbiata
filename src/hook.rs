@@ -126,8 +126,6 @@ fn handle_usersave(json: &[u8]) {
         }
     };
 
-    // The game is identified per request; Konasute has no avs2-ea3.dll to read a boot node
-    // from.
     let info = &envelope.eacnet.info;
     if !info.game_id.is_empty() && info.game_id != "ddr" {
         debug!("Ignoring a usersave from '{}'", info.game_id);
@@ -294,8 +292,7 @@ unsafe fn serialize(property: *mut ()) -> Option<Vec<u8>> {
     }
 }
 
-/// The property's outermost node name, read off the JSON rather than by walking nodes, so an
-/// unknown root is still named correctly.
+/// The property's outermost node name.
 fn root_name(text: &str) -> Option<String> {
     let start = text.find('"')? + 1;
     let end = text[start..].find('"')? + start;

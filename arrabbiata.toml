@@ -7,8 +7,10 @@ submit = true
 timeout = 3000
 
 [tachi]
-# Tachi instance base URL
-base_url = 'https://kamaitachi.xyz/'
+# Tachi instance base URL. Use kamai.tachi.ac rather than the older kamaitachi.xyz: that
+# one answers with a redirect to this host, and a cross-host redirect drops the
+# Authorization header, so submission would fail to authenticate.
+base_url = 'https://kamai.tachi.ac/'
 # Score import endpoint
 import = '/ir/direct-manual/import'
 # Your Tachi API key. Nothing is submitted until this is set.

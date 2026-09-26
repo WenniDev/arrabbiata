@@ -151,7 +151,10 @@ fn default_timeout() -> u64 {
 }
 
 fn default_base_url() -> String {
-    "https://kamaitachi.xyz/".to_string()
+    // Kamaitachi's canonical host. The older kamaitachi.xyz still answers, but with a 308
+    // to this one, and a cross-host redirect drops the Authorization header -- so inheriting
+    // upstream's URL meant a default install could never authenticate.
+    "https://kamai.tachi.ac/".to_string()
 }
 
 fn default_import_endpoint() -> String {

@@ -1,0 +1,476 @@
+//! Turning one stage's result into a Tachi score, or refusing to.
+//!
+//! The guiding rule is that a stage this fork cannot fully account for is refused and
+//! dumped rather than submitted on a guess. A wrong score submitted silently is worse than
+//! a missing one, and the dump turns each refusal into something that can be diagnosed.
+
+use crate::types::game::Note;
+use crate::types::tachi::{DIFFICULTIES, ImportScore, Judgements, Lamp, Optional};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    UnknownDifficulty(i32),
+    UnknownPlaystyle(i32),
+    ScoreOutOfRange(i64),
+    /// No lamp can be established: the combo broke, and `clearkind` is a value this fork
+    /// has never seen.
+    UnknownClearKind(i32),
+    /// The judgements and `clearkind` disagree about what happened.
+    LampConflict {
+        from_judgements: Option<Lamp>,
+        from_clearkind: Lamp,
+        clearkind: i32,
+    },
+    /// A full combo whose `maxcombo` does not account for the notes hit.
+    ComboMismatch {
+        maxcombo: i64,
+        expected_min: i64,
+        expected_max: i64,
+    },
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownDifficulty(notetype) => {
+                write!(f, "notetype {notetype} is outside the five known difficulties")
+            }
+            Self::UnknownPlaystyle(playstyle) => {
+                write!(f, "playstyle {playstyle} is neither SINGLE (0) nor DOUBLE (1)")
+            }
+            Self::ScoreOutOfRange(score) => {
+                write!(f, "score {score} is outside the 0 to 1,000,000 Tachi accepts")
+            }
+            Self::UnknownClearKind(clearkind) => write!(
+                f,
+                "the combo broke, so the lamp must come from clearkind, and {clearkind} is not a value this build knows \
+                 (known: 1 FAILED, 3 CLEAR, 7 FULL COMBO, 8 GREAT FULL COMBO)"
+            ),
+            Self::LampConflict {
+                from_judgements,
+                from_clearkind,
+                clearkind,
+            } => match from_judgements {
+                Some(judged) => write!(
+                    f,
+                    "the judgements say {judged} but clearkind {clearkind} says {from_clearkind}"
+                ),
+                None => write!(
+                    f,
+                    "the combo broke, but clearkind {clearkind} claims {from_clearkind}"
+                ),
+            },
+            Self::ComboMismatch {
+                maxcombo,
+                expected_min,
+                expected_max,
+            } => write!(
+                f,
+                "a full combo with maxcombo {maxcombo}, which is outside the {expected_min} to {expected_max} its judgements account for"
+            ),
+        }
+    }
+}
+
+pub struct Converted {
+    pub playtype: &'static str,
+    pub score: ImportScore,
+}
+
+/// The `clearkind` values established from captured play.
+///
+/// This is deliberately not a formula. The two full-combo values alone suggested `clearkind`
+/// was Tachi's lamp index plus three, which a later failed play disproved -- it is 1, not 3.
+/// Anything not listed here is refused.
+fn lamp_from_clearkind(clearkind: i32) -> Option<Lamp> {
+    match clearkind {
+        1 => Some(Lamp::Failed),
+        3 => Some(Lamp::Clear),
+        7 => Some(Lamp::FullCombo),
+        8 => Some(Lamp::GreatFullCombo),
+        _ => None,
+    }
+}
+
+/// The full-combo tier, which the judgements determine on their own: the worst judgement
+/// present names the lamp. Returns `None` when the combo broke, which the judgements cannot
+/// tell apart from a fail.
+fn lamp_from_judgements(note: &Note) -> Option<Lamp> {
+    if note.combo_breaks() != 0 {
+        return None;
+    }
+
+    Some(if note.judge_good > 0 {
+        Lamp::FullCombo
+    } else if note.judge_great > 0 {
+        Lamp::GreatFullCombo
+    } else if note.judge_perfect > 0 {
+        Lamp::PerfectFullCombo
+    } else {
+        Lamp::MarvelousFullCombo
+    })
+}
+
+/// Establishes the lamp from both sources and requires them to agree.
+///
+/// The judgements are authoritative for full combos, including the two tiers no capture has
+/// produced a `clearkind` for. `clearkind` is authoritative for everything else, because
+/// judgements alone cannot separate a fail from a clear.
+fn lamp(note: &Note) -> Result<Lamp, Refusal> {
+    let from_clearkind = lamp_from_clearkind(note.clearkind);
+
+    match lamp_from_judgements(note) {
+        Some(judged) => match from_clearkind {
+            Some(known) if known != judged => Err(Refusal::LampConflict {
+                from_judgements: Some(judged),
+                from_clearkind: known,
+                clearkind: note.clearkind,
+            }),
+            // An unrecognized clearkind is fine here: the judgements already settled it.
+            _ => Ok(judged),
+        },
+        None => match from_clearkind {
+            Some(known) if known.is_full_combo() => Err(Refusal::LampConflict {
+                from_judgements: None,
+                from_clearkind: known,
+                clearkind: note.clearkind,
+            }),
+            Some(known) => Ok(known),
+            None => Err(Refusal::UnknownClearKind(note.clearkind)),
+        },
+    }
+}
+
+pub fn convert(note: &Note) -> Result<Converted, Refusal> {
+    let difficulty = usize::try_from(note.notetype)
+        .ok()
+        .and_then(|index| DIFFICULTIES.get(index).copied())
+        .ok_or(Refusal::UnknownDifficulty(note.notetype))?;
+
+    let playtype = match note.playstyle {
+        0 => "SP",
+        1 => "DP",
+        other => return Err(Refusal::UnknownPlaystyle(other)),
+    };
+
+    if !(0..=1_000_000).contains(&note.score) {
+        return Err(Refusal::ScoreOutOfRange(note.score));
+    }
+
+    let lamp = lamp(note)?;
+
+    // A full combo means every note in the chart was part of the combo, so maxcombo has to
+    // account for the judgements. Whether O.K. counts towards a combo has never been
+    // observed, so both readings are accepted rather than risk refusing a real score.
+    if lamp.is_full_combo() {
+        let expected_min = note.combo_notes();
+        let expected_max = expected_min + note.judge_ok;
+        if note.maxcombo < expected_min || note.maxcombo > expected_max {
+            return Err(Refusal::ComboMismatch {
+                maxcombo: note.maxcombo,
+                expected_min,
+                expected_max,
+            });
+        }
+    }
+
+    let time_achieved = if note.endtime > 0 {
+        note.endtime
+    } else {
+        std::time::UNIX_EPOCH
+            .elapsed()
+            .map(|elapsed| elapsed.as_millis() as i64)
+            .unwrap_or_default()
+    };
+
+    Ok(Converted {
+        playtype,
+        score: ImportScore {
+            match_type: "inGameID",
+            identifier: note.mcode.to_string(),
+            difficulty,
+            lamp,
+            score: note.score,
+            time_achieved,
+            judgements: Judgements {
+                marvelous: note.judge_marvelous,
+                perfect: note.judge_perfect,
+                great: note.judge_great,
+                good: note.judge_good,
+                ok: note.judge_ok,
+                miss: note.judge_miss,
+            },
+            optional: Optional {
+                // Tachi rejects a non-positive exScore rather than storing zero.
+                ex_score: (note.exscore > 0).then_some(note.exscore),
+                fast: Some(note.fastcount),
+                slow: Some(note.slowcount),
+                max_combo: Some(note.maxcombo),
+            },
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// AFRONOVA, BEGINNER 5. Great Full Combo, clearkind 8.
+    fn afronova() -> Note {
+        Note {
+            stagenum: 1,
+            mcode: 124,
+            notetype: 0,
+            level: 5,
+            rank: 1,
+            clearkind: 8,
+            score: 981_120,
+            exscore: 283,
+            maxcombo: 108,
+            fastcount: 7,
+            slowcount: 29,
+            judge_marvelous: 72,
+            judge_perfect: 31,
+            judge_great: 5,
+            endtime: 1_790_388_044_481,
+            ..Note::default()
+        }
+    }
+
+    /// Abyss, EXPERT 10. Good Full Combo, clearkind 7.
+    fn abyss() -> Note {
+        Note {
+            stagenum: 2,
+            mcode: 257,
+            notetype: 3,
+            level: 10,
+            rank: 1,
+            clearkind: 7,
+            score: 966_510,
+            exscore: 790,
+            maxcombo: 309,
+            fastcount: 46,
+            slowcount: 66,
+            judge_marvelous: 197,
+            judge_perfect: 88,
+            judge_great: 23,
+            judge_good: 1,
+            endtime: 1_790_388_180_000,
+            ..Note::default()
+        }
+    }
+
+    /// Arrabbiata, DIFFICULT 13. Cleared with 11 misses, clearkind 3.
+    fn arrabbiata() -> Note {
+        Note {
+            stagenum: 2,
+            mcode: 37_270,
+            notetype: 2,
+            level: 13,
+            rank: 4,
+            clearkind: 3,
+            score: 877_490,
+            exscore: 804,
+            maxcombo: 260,
+            fastcount: 30,
+            slowcount: 178,
+            judge_marvelous: 157,
+            judge_perfect: 123,
+            judge_great: 84,
+            judge_good: 1,
+            judge_miss: 11,
+            judge_ok: 1,
+            endtime: 1_790_389_699_000,
+            ..Note::default()
+        }
+    }
+
+    /// Tohoku EVOLVED, CHALLENGE 18. Failed out, clearkind 1.
+    fn failed() -> Note {
+        Note {
+            stagenum: 1,
+            mcode: 37_789,
+            notetype: 4,
+            level: 18,
+            rank: 15,
+            clearkind: 1,
+            judge_miss: 17,
+            endtime: 1_790_389_526_000,
+            ..Note::default()
+        }
+    }
+
+    #[test]
+    fn converts_the_four_captured_plays() {
+        let cases = [
+            (afronova(), "BEGINNER", Lamp::GreatFullCombo, 981_120, Some(283)),
+            (abyss(), "EXPERT", Lamp::FullCombo, 966_510, Some(790)),
+            (arrabbiata(), "DIFFICULT", Lamp::Clear, 877_490, Some(804)),
+            // A failed play scores zero, and a zero exScore is left out entirely.
+            (failed(), "CHALLENGE", Lamp::Failed, 0, None),
+        ];
+
+        for (note, difficulty, lamp, score, ex_score) in cases {
+            let converted = convert(&note).expect("should convert");
+            assert_eq!(converted.playtype, "SP");
+            assert_eq!(converted.score.difficulty, difficulty);
+            assert_eq!(converted.score.lamp, lamp);
+            assert_eq!(converted.score.score, score);
+            assert_eq!(converted.score.optional.ex_score, ex_score);
+            assert_eq!(converted.score.identifier, note.mcode.to_string());
+            assert_eq!(converted.score.time_achieved, note.endtime);
+        }
+    }
+
+    #[test]
+    fn judgements_name_the_full_combo_tier() {
+        let tiers = [
+            // clearkind moves with the tier, or the cross-check refuses the pair -- which is
+            // exactly what it is there to do.
+            (Note { judge_good: 1, clearkind: 7, ..afronova() }, Lamp::FullCombo),
+            (afronova(), Lamp::GreatFullCombo),
+            (Note { judge_great: 0, clearkind: 9, ..afronova() }, Lamp::PerfectFullCombo),
+            (
+                Note { judge_great: 0, judge_perfect: 0, clearkind: 10, ..afronova() },
+                Lamp::MarvelousFullCombo,
+            ),
+        ];
+
+        for (note, expected) in tiers {
+            // maxcombo has to keep up, or the combo check fires first.
+            let note = Note { maxcombo: note.combo_notes(), ..note };
+            assert_eq!(convert(&note).map(|c| c.score.lamp), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn perfect_and_marvelous_combos_pass_without_a_known_clearkind() {
+        // clearkind 9 and 10 have never been captured. The judgements settle these on their
+        // own, so an unrecognized value must not refuse them.
+        let note = Note { judge_great: 0, clearkind: 9, maxcombo: 103, ..afronova() };
+        assert_eq!(convert(&note).map(|c| c.score.lamp), Ok(Lamp::PerfectFullCombo));
+    }
+
+    #[test]
+    fn a_broken_combo_with_an_unknown_clearkind_is_refused() {
+        let note = Note { clearkind: 5, ..arrabbiata() };
+        assert_eq!(convert(&note).err(), Some(Refusal::UnknownClearKind(5)));
+    }
+
+    #[test]
+    fn disagreement_between_judgements_and_clearkind_is_refused() {
+        // Judgements say a Great Full Combo, clearkind says a plain clear.
+        let note = Note { clearkind: 3, ..afronova() };
+        assert!(matches!(
+            convert(&note).err(),
+            Some(Refusal::LampConflict { from_judgements: Some(Lamp::GreatFullCombo), .. })
+        ));
+
+        // The combo broke, but clearkind claims a full combo.
+        let note = Note { clearkind: 7, ..arrabbiata() };
+        assert!(matches!(
+            convert(&note).err(),
+            Some(Refusal::LampConflict { from_judgements: None, .. })
+        ));
+    }
+
+    #[test]
+    fn a_full_combo_whose_maxcombo_does_not_add_up_is_refused() {
+        let note = Note { maxcombo: 50, ..afronova() };
+        assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
+    }
+
+    #[test]
+    fn a_full_combo_may_or_may_not_count_ok_judgements_towards_its_combo() {
+        // Whether O.K. counts is unobserved, so both readings are accepted.
+        let base = Note { judge_ok: 4, ..afronova() };
+        for maxcombo in [base.combo_notes(), base.combo_notes() + 4] {
+            assert!(convert(&Note { maxcombo, ..base.clone() }).is_ok());
+        }
+        // One beyond the generous reading is still refused.
+        let note = Note { maxcombo: base.combo_notes() + 5, ..base };
+        assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
+    }
+
+    #[test]
+    fn out_of_range_inputs_are_refused() {
+        assert_eq!(
+            convert(&Note { notetype: 5, ..afronova() }).err(),
+            Some(Refusal::UnknownDifficulty(5))
+        );
+        assert_eq!(
+            convert(&Note { playstyle: 2, ..afronova() }).err(),
+            Some(Refusal::UnknownPlaystyle(2))
+        );
+        assert_eq!(
+            convert(&Note { score: 1_000_001, ..afronova() }).err(),
+            Some(Refusal::ScoreOutOfRange(1_000_001))
+        );
+    }
+
+    #[test]
+    fn doubles_are_reported_as_dp() {
+        let note = Note { playstyle: 1, ..afronova() };
+        assert_eq!(convert(&note).unwrap().playtype, "DP");
+    }
+
+    /// End to end over a captured payload: the game's own JSON in, Tachi's JSON out. This
+    /// is what catches a serde field name that does not match what the game sends, which
+    /// the struct-level tests above cannot see.
+    #[test]
+    fn a_captured_payload_becomes_the_expected_tachi_import() {
+        use crate::types::fixtures::USERSAVE;
+        use crate::types::game::Envelope;
+        use crate::types::tachi::{Import, ImportMeta};
+
+        let envelope: Envelope =
+            serde_json::from_str(USERSAVE).expect("the captured payload should parse");
+
+        assert_eq!(envelope.eacnet.info.game_id, "ddr");
+        assert_eq!(envelope.eacnet.request.method, "usergamedata_advanced");
+
+        let save = &envelope.eacnet.request.data.data;
+        assert_eq!(save.mode, "usersave");
+        assert!(!save.isgameover);
+
+        // Five slots arrive; only the filled one is a play.
+        let played: Vec<_> = save.note.iter().filter(|note| !note.is_empty()).collect();
+        assert_eq!(played.len(), 1);
+
+        let converted = convert(played[0]).expect("a cleared play should convert");
+        let import = Import {
+            meta: ImportMeta {
+                game: "ddr",
+                playtype: converted.playtype,
+                service: "arrabbiata".to_string(),
+                version: None,
+            },
+            scores: vec![converted.score],
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&import).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "meta": { "game": "ddr", "playtype": "SP", "service": "arrabbiata" },
+                "scores": [{
+                    "matchType": "inGameID",
+                    "identifier": "37270",
+                    "difficulty": "DIFFICULT",
+                    "lamp": "CLEAR",
+                    "score": 877490,
+                    "timeAchieved": 1790389696371i64,
+                    "judgements": {
+                        "MARVELOUS": 157, "PERFECT": 123, "GREAT": 84,
+                        "GOOD": 1, "OK": 1, "MISS": 11
+                    },
+                    "optional": { "exScore": 804, "fast": 30, "slow": 178, "maxCombo": 260 }
+                }]
+            }),
+            "the import Tachi receives should match the results screen"
+        );
+
+        // version is left out entirely rather than sent empty.
+        assert!(json["meta"].get("version").is_none());
+    }
+}

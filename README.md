@@ -8,7 +8,7 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 
 - Submit scores to a Tachi instance after each stage
 - Singles and doubles
-- Skip a score it cannot read rather than guess, and save it for diagnosis
+- Skip a score it cannot read rather than guess at it
 
 ## Installation
 
@@ -21,7 +21,7 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 
 - The configuration file is created in the `game` folder at startup if it doesn't already exist
 - Your Tachi API key needs the `submit_score` permission
-- Set `submit` to `false` in `arrabbiata.toml` to see what would be sent, without sending it
+- Set `enable` to `false` in `arrabbiata.toml` to turn the hook off without removing it
 
 ## License
 

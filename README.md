@@ -8,7 +8,6 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 
 - Submit scores to a Tachi instance after each stage
 - Singles and doubles
-- Skip a score it cannot read rather than guess at it
 
 ## Installation
 

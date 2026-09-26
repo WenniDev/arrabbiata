@@ -47,7 +47,7 @@ pub fn init() -> Result<()> {
     crochet::enable!(property_mem_write_hook).map_err(|err| {
         anyhow::anyhow!(
             "Could not hook property_mem_write in avs2-core.dll: {err:#}. \
-             If this is a load-order problem, move arrabbiata.dll further down chainload.txt."
+             If avs2-core.dll was not loaded yet, inject arrabbiata.dll later."
         )
     })?;
 

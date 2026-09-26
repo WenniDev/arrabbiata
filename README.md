@@ -161,8 +161,11 @@ than guessed into a lamp. Note that `clearkind` is *not* Tachi's lamp index offs
 -- that was the obvious guess from the two full-combo values, and the failed play disproved it.
 
 `rank` is the grade as an index into Tachi's own grade list, descending: 0 is AAA, 1 AA+, 4 A+,
-15 E. Confirmed on four plays. It is not needed -- Tachi derives grade from score -- but it makes
-a free cross-check on a parse.
+15 E. It is not needed, since Tachi derives grade from score, and it would make a poor
+cross-check against a score-derived grade: a failed play sends 15 regardless, one capture pairing
+it with a score of 814,710 that would otherwise grade A. Tachi caps a failed score's grade the
+same way, so there is nothing to do about it -- but a parse must not treat the disagreement as an
+error.
 
 ## Why a dump first
 

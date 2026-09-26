@@ -26,6 +26,7 @@ const RECENT_PLAYS: usize = 32;
 static SEEN_DESTROY: AtomicU64 = AtomicU64::new(0);
 static SEEN_WRITE: AtomicU64 = AtomicU64::new(0);
 static SUBMITTED: AtomicU64 = AtomicU64::new(0);
+static DRY_RUN: AtomicU64 = AtomicU64::new(0);
 static REFUSED: AtomicU64 = AtomicU64::new(0);
 
 /// Identifies a play by chart and end time. The two saves of one stage share all three, so
@@ -64,12 +65,19 @@ pub fn init() -> Result<()> {
         return Ok(());
     }
 
+    let no_key = CONFIGURATION.tachi.api_key.as_deref().unwrap_or("").is_empty()
+        && CONFIGURATION.profiles.is_empty();
+
     if !CONFIGURATION.general.submit {
-        info!("Submission is off (general.submit), so scores will only be observed");
-    } else if CONFIGURATION.tachi.api_key.as_deref().unwrap_or("").is_empty()
-        && CONFIGURATION.profiles.is_empty()
-    {
-        warn!("No Tachi API key is set, so nothing can be submitted. Edit arrabbiata.toml");
+        info!(
+            "Dry run: general.submit is off, so each score is worked out and printed in full \
+             but nothing is sent"
+        );
+    } else if no_key {
+        info!(
+            "Dry run: no Tachi API key is set, so each score is worked out and printed in full \
+             but nothing is sent. Set tachi.api_key in arrabbiata.toml to submit."
+        );
     } else {
         info!("Submitting scores to {}", TACHI_IMPORT_URL.as_str());
     }
@@ -87,10 +95,11 @@ pub fn init() -> Result<()> {
 pub fn release() -> Result<()> {
     info!(
         "Seen {} properties via property_destroy and {} via property_mem_write; \
-         submitted {} scores, refused {}, wrote {} dumps",
+         submitted {} scores, {} dry runs, refused {}, wrote {} dumps",
         SEEN_DESTROY.load(Ordering::Relaxed),
         SEEN_WRITE.load(Ordering::Relaxed),
         SUBMITTED.load(Ordering::Relaxed),
+        DRY_RUN.load(Ordering::Relaxed),
         REFUSED.load(Ordering::Relaxed),
         dump::written()
     );
@@ -164,7 +173,10 @@ unsafe fn process(property: *mut (), source: &str) -> Result<()> {
         && method.as_deref() == Some("usergamedata_advanced")
         && mode.as_deref() == Some("usersave");
 
-    if is_usersave && source == "write" && CONFIGURATION.general.submit {
+    // Handled regardless of whether submission is on: with it off, the payload is still
+    // parsed, converted and reported, which is the only way to tell that the whole chain
+    // works before pointing it at a real account.
+    if is_usersave && source == "write" {
         handle_usersave(&json);
     }
 
@@ -266,31 +278,32 @@ fn handle_usersave(json: &[u8]) {
         return;
     }
 
+    let api_key = CONFIGURATION.api_key_for(&save.refid);
+    if api_key.is_none() {
+        warn!(
+            "No API key covers refid {}, so this is a dry run: the score is worked out and \
+             reported but not sent anywhere",
+            save.refid
+        );
+    }
+
     debug!(
         "Save from {} (ddrcode {}, refid {}) on {}, at game over: {}",
         save.name, save.ddrcode, save.refid, info.soft_version, save.isgameover
     );
-    let Some(api_key) = CONFIGURATION.api_key_for(&save.refid) else {
-        warn!(
-            "No API key covers refid {}, so its scores are not submitted",
-            save.refid
-        );
-        return;
-    };
-
     for note in save.note.iter() {
         if note.is_empty() {
             continue;
         }
         if !claim(note) {
             debug!(
-                "Already submitted mcode {} notetype {} at {}, skipping the repeat",
+                "Already handled mcode {} notetype {} at {}, skipping the repeat",
                 note.mcode, note.notetype, note.endtime
             );
             continue;
         }
 
-        submit(note, api_key, json);
+        handle_note(note, api_key, json);
     }
 }
 
@@ -311,7 +324,13 @@ fn claim(note: &Note) -> bool {
     true
 }
 
-fn submit(note: &Note, api_key: &str, json: &[u8]) {
+/// Works one stage out and either sends it or reports what would have been sent.
+///
+/// `api_key` is `None` when nothing covers this player, which together with
+/// `general.submit` being off is what makes a dry run. A dry run still parses, converts,
+/// validates and refuses exactly as a real run does -- only the POST is skipped -- so it is
+/// a genuine rehearsal rather than a different code path.
+fn handle_note(note: &Note, api_key: Option<&str>, json: &[u8]) {
     let converted = match scores::convert(note) {
         Ok(converted) => converted,
         Err(refusal) => {
@@ -356,6 +375,15 @@ fn submit(note: &Note, api_key: &str, json: &[u8]) {
         note.mcode,
         note.rank
     );
+    let Some(api_key) = api_key.filter(|_| CONFIGURATION.general.submit) else {
+        DRY_RUN.fetch_add(1, Ordering::Relaxed);
+        info!(
+            "Would submit {summary}:\n{}",
+            serde_json::to_string_pretty(&import)
+                .unwrap_or_else(|err| format!("(could not render the import: {err})"))
+        );
+        return;
+    };
     let api_key = api_key.to_string();
 
     // The game is already waiting on its own network call here; adding a blocking POST to

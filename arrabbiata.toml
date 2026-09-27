@@ -8,7 +8,8 @@ timeout = 3000       # ms
 base_url = 'https://kamai.tachi.ac/'
 import = '/ir/direct-manual/import'
 api_key = ''         # required, and needs the submit_score permission
-# version = 'konaste'  # unset lets Tachi match charts across versions
+# Leave version unset, so Tachi looks for the chart in every version. 'konaste' is this game,
+# but Tachi does not tag every chart of it as such, so naming it loses scores.
 
 # Extra keys per player, for a shared install. A refid appears in the log on that player's
 # first save.

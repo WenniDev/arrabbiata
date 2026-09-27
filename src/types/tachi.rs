@@ -84,8 +84,8 @@ pub struct ImportMeta {
     pub game: &'static str,
     pub playtype: &'static str,
     pub service: String,
-    /// Tachi has no `grandprix` version for `ddr`, only `a`, `a20`, `a20plus`, `a3`,
-    /// `konaste` and `world`. Left out by default so Tachi resolves charts across versions.
+    /// Left out so Tachi searches every version for the chart. Its seeds do not tag every
+    /// GRAND PRIX chart as `konaste`, so naming that version loses scores.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 }

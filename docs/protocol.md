@@ -26,16 +26,15 @@ payload reports the rank that did.
 
 ### Version
 
-Tachi has no `grandprix` version for `ddr`, only `a`, `a20`, `a20plus`, `a3`, `konaste` and
-`world`. `tachi.version` is left unset, so `meta.version` is omitted from the import and Tachi
-resolves charts across versions rather than filing scores under one this fork picked. Set it if
-you know which you want. Whether it should be set at all is the one open question left.
+`tachi.version` is left unset, so `meta.version` is omitted and Tachi searches every version
+for the chart. Tachi's `konaste` is this game, but naming it loses scores anyway: its seeds do
+not tag every GRAND PRIX chart with it, and some carry `world` alone.
 
 ### Players
 
-There is no `cardmng` on Konasute — zero occurrences across 466 captured properties covering
-login and profile load. A player is identified by the `refid` their own save carries, which is
-what `[profiles]` keys off, rather than by an E000 card number as upstream does.
+There is no `cardmng` — zero occurrences across 466 captured properties covering login and
+profile load. A player is named by the `refid` their own save carries, which is what
+`[profiles]` keys off.
 
 ## The envelope
 
@@ -203,8 +202,8 @@ So `src/sys.rs` and `src/log.rs` carry over as-is.
 
 ## How it differs from upstream
 
-- **No `avs2-ea3.dll` on Konasute**, so upstream's boot hook has no target. The property hook is
-  installed directly from `DllMain`, which relies on being injected once AVS is loaded.
+- **No `avs2-ea3.dll`**, so upstream's boot hook has no target. The property hook is installed
+  directly from `DllMain`, which relies on being injected once AVS is loaded.
 - **Game identity** is `VGP:J:A:A:<ext>` rather than SOUND VOLTEX's `KFC`. Builds from
   `2026012800` through `2026061700` have been observed, with `spec` seen as `A`, `B` and `C`.
 - **Cloudlink PB injection is gone.** It is a SOUND VOLTEX feature with no GRAND PRIX equivalent,

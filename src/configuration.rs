@@ -13,8 +13,7 @@ pub struct Configuration {
     pub general: GeneralConfiguration,
     #[serde(default)]
     pub tachi: TachiConfiguration,
-    /// Extra API keys selected by `refid`. Konasute has no `cardmng`, so a player is
-    /// identified by the `refid` their own save carries.
+    /// Extra API keys selected by `refid`, which is how a save names its player.
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfiguration>,
 }

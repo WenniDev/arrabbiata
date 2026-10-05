@@ -17,18 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    name: Build (${{ matrix.name }})
-
-    strategy:
-      matrix:
-        include:
-          - name: win-64
-            target: x86_64-pc-windows-msvc
-            artifact_name: arrabbiata
-          - name: win-7
-            target: x86_64-win7-windows-msvc
-            artifact_name: arrabbiata-win7
-            nightly: true
+    name: Build
 
     steps:
     - name: Checkout
@@ -36,31 +25,18 @@ jobs:
 
     - name: Cache
       uses: Swatinem/rust-cache@v2
-      with:
-          key: ${{ matrix.target }}
-    
-    - name: Install nightly Rust
-      if: ${{ matrix.nightly }}
-      uses: dtolnay/rust-toolchain@nightly
-    
-    - name: Install rust-src
-      if: ${{ matrix.nightly }}
-      run: rustup component add rust-src --toolchain nightly-x86_64-pc-windows-msvc
 
-    - name: Build (win-64)
-      if: ${{ matrix.name == 'win-64' }}
-      run: cargo build --release --target ${{ matrix.target }}
+    - name: Build
+      run: cargo build --release --target x86_64-pc-windows-msvc
 
-    - name: Build (win-7)
-      if: ${{ matrix.name == 'win-7' }}
-      run: cargo +nightly build --release -Z build-std=panic_abort,std --target ${{ matrix.target }}
+    - name: Test
+      run: cargo test --release --target x86_64-pc-windows-msvc
 
-    - name: Rename artifact
-      if: ${{ matrix.artifact_name != 'arrabbiata' }}
-      run: mv target/${{ matrix.target }}/release/arrabbiata.dll target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.dll
+    - name: Name it d3d9.dll
+      run: mv target/x86_64-pc-windows-msvc/release/arrabbiata.dll target/x86_64-pc-windows-msvc/release/d3d9.dll
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
         archive: false
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.dll
+        path: target/x86_64-pc-windows-msvc/release/d3d9.dll

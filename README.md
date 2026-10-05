@@ -12,7 +12,7 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 ## Installation
 
 - Download the latest release from the [releases page](https://github.com/WenniDev/arrabbiata/releases/latest)
-- Rename it to `d3d9.dll` and drop it in the folder holding `ddr-konaste.exe`
+- Drop `d3d9.dll` in the folder holding `ddr-konaste.exe`
 - Start the game once, then set your API key in the config file and restart
 
 ## Tips

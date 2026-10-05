@@ -8,8 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
 pub struct Logger {
-    // `AutoStream` turns ANSI codes into Console API calls on Windows consoles without
-    // native VT support, rather than writing them out as raw escape bytes.
+    // `AutoStream` turns ANSI codes into Console API calls where native VT support is missing.
     console: anstream::AutoStream<std::io::Stdout>,
     // `StripStream` keeps the console's ANSI codes out of the log file.
     file: anstream::StripStream<File>,
@@ -63,10 +62,7 @@ impl Logger {
 
 impl Write for Logger {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // The shared console runs in virtual-terminal mode, where a bare line feed moves down
-        // a row without returning to column 0. CRLF is safe either way round: a console that
-        // does return on its own treats the extra carriage return as a no-op. The file keeps
-        // the original bytes, so the returned count stays honest.
+        // The shared console runs in VT mode, where a bare line feed does not return to column 0.
         let _ = self.console.write_all(&to_crlf(buf));
         self.file.write(buf)
     }
@@ -134,9 +130,7 @@ impl<T> ToStyled<T> for T {
     }
 }
 
-// This logger is installed as a `Target::Pipe`, for which env_logger disables its own
-// styling unconditionally. Color support is therefore resolved here the way env_logger would
-// for `Target::Stdout`: honor `RUST_LOG_STYLE`, otherwise let anstream auto-detect.
+// env_logger disables styling for `Target::Pipe`, so colour support is resolved here instead.
 fn color_choice() -> anstream::ColorChoice {
     static CHOICE: OnceLock<anstream::ColorChoice> = OnceLock::new();
     *CHOICE.get_or_init(|| match std::env::var("RUST_LOG_STYLE").as_deref() {

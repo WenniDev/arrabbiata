@@ -1,13 +1,7 @@
-//! The shape of a GRAND PRIX `usersave` request.
-//!
-//! Only the fields the hook reads are declared; AVS sends a great deal more (play options,
-//! ghost data, groove radar, song metadata). Every field is `#[serde(default)]` so a game
-//! version that adds or drops one cannot turn a whole payload into a parse error.
-
+// Every field is #[serde(default)] so a game update adding or dropping one cannot fail the parse.
 use serde::Deserialize;
 
-/// A node AVS serializes either as a single object or as an array, depending on how many
-/// children it has.
+/// A node AVS serializes as a single object or an array, depending on child count.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum OneOrMany<T> {
@@ -91,15 +85,13 @@ pub struct Note {
     /// Tachi's `inGameID` for `ddr`.
     #[serde(default)]
     pub mcode: u32,
-    /// Names the chart across both playstyles: 0-4 singles BEGINNER to CHALLENGE, 5-8
-    /// doubles BASIC to CHALLENGE.
+    /// 0-4 singles BEGINNER to CHALLENGE, 5-8 doubles BASIC to CHALLENGE.
     #[serde(default)]
     pub notetype: i32,
     /// The chart's difficulty rating.
     #[serde(default)]
     pub level: i32,
-    // `rank` is also present -- the grade, 0 AAA down to 15 E -- and is not modelled: Tachi
-    // derives grade from score, and a failed play sends 15 whatever it scored.
+    // `rank` is also present, the grade 0 AAA to 15 E; not modelled, a fail sends 15 regardless.
     #[serde(default)]
     pub clearkind: i32,
     #[serde(default)]
@@ -125,6 +117,7 @@ pub struct Note {
     #[serde(default)]
     pub judge_ok: i64,
     // `judge_boo` and `judge_ng` are also present, and always zero. Not modelled.
+
     /// 0 is SINGLE, 1 is DOUBLE.
     #[serde(default)]
     pub playstyle: i32,

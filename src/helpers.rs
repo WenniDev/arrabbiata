@@ -1,5 +1,3 @@
-//! Talking to Tachi.
-
 use anyhow::Result;
 use log::debug;
 use serde::Serialize;
@@ -27,10 +25,7 @@ pub fn request_agent() -> ureq::Agent {
     ureq::Agent::new_with_config(config)
 }
 
-/// POSTs a body to Tachi and returns the decoded response.
-///
-/// Tachi answers a rejected import with HTTP 200 and `success: false`, so the caller has to
-/// read the body rather than trust the status.
+/// POSTs to Tachi. A rejected import still answers 200, so the caller must read `success`.
 pub fn post<T>(url: &str, api_key: &str, body: &T) -> Result<serde_json::Value>
 where
     T: Serialize + Debug,

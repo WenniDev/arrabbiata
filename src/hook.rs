@@ -1,5 +1,3 @@
-//! The AVS property hook, and what to do with what it sees.
-
 use std::cell::Cell;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,33 +11,27 @@ use crate::types::game::{Envelope, Note};
 use crate::types::tachi::{Import, ImportMeta};
 use crate::{CONFIGURATION, TACHI_IMPORT_URL, helpers};
 
-/// AVS picks a property's serialization from flags held on the property itself: setting
-/// 0x800 and clearing 0x008 switches the native kbin output to JSON. `serialize` restores
-/// both afterwards, so the game sees the property exactly as it left it.
+/// Setting 0x800 and clearing 0x008 switches AVS's output to JSON; `serialize` restores both.
 const FLAG_JSON: u32 = 0x800;
 const FLAG_KBIN: u32 = 0x008;
 
-/// Properties above this are not read. A save is a few tens of kilobytes; the music database
-/// that also passes through here is nearly a megabyte and is of no interest.
+/// Above this nothing is read: a save is tens of kilobytes, the music database near a megabyte.
 const MAX_SIZE: usize = 1024 * 1024;
 
-/// How many recently submitted plays to remember. A stage is saved twice -- once when it
-/// ends and again at game over -- so this only has to outlive one session's worth of stages.
+/// A stage is saved twice, so this only has to outlive one session's worth of stages.
 const RECENT_PLAYS: usize = 32;
 
 static SEEN: AtomicU64 = AtomicU64::new(0);
 static SUBMITTED: AtomicU64 = AtomicU64::new(0);
 static REFUSED: AtomicU64 = AtomicU64::new(0);
 
-/// Identifies a play by chart and end time. Both saves of one stage share all three, so the
-/// repeat is caught without trusting `isgameover`.
+/// Identifies a play by chart and end time, so the game-over repeat is caught.
 type PlayId = (u32, i32, i64);
 
 static RECENT: Mutex<Vec<PlayId>> = Mutex::new(Vec::new());
 
 thread_local! {
-    /// Serializing a property calls back into the hooked function; without this guard the
-    /// first read recurses until the stack runs out.
+    /// Serializing a property re-enters the hook; without this guard the first read recurses.
     static CAPTURING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -78,8 +70,7 @@ pub fn release() -> Result<()> {
     Ok(())
 }
 
-/// The serialization path a request takes on its way out. A `usersave` passes through here
-/// exactly once, which is what makes it the place to submit from.
+/// A `usersave` passes through here exactly once, which makes it the place to submit from.
 #[crochet::hook("avs2-core.dll", "XCgsqzn00000b8")]
 pub unsafe fn property_mem_write_hook(property: *mut (), data: *mut u8, size: u32) -> i32 {
     if !property.is_null() {
@@ -113,10 +104,7 @@ unsafe fn capture(property: *mut ()) {
     CAPTURING.with(|flag| flag.set(false));
 }
 
-/// Parses a save and submits whatever stage it carries.
-///
-/// Returns nothing: a save that cannot be made sense of must not disturb a running game, so
-/// failures are logged and dropped.
+/// Parses a save and submits what it carries; failures are logged and dropped, never raised.
 fn handle_usersave(json: &[u8]) {
     let envelope = match serde_json::from_slice::<Envelope>(json) {
         Ok(envelope) => envelope,
@@ -206,8 +194,7 @@ fn submit(note: &Note, api_key: &str) {
         }
     };
 
-    // Flare takes no part in a score's identity, so an unplaceable rank is dropped rather
-    // than refusing the score.
+    // Flare takes no part in a score's identity, so an unplaceable rank is dropped, not refused.
     if note.playing_flare != 0 && scores::flare(note).is_none() {
         warn!(
             "mcode {} reports flare {}, which is outside the ranks Tachi knows, so the score \
@@ -301,15 +288,12 @@ fn root_name(text: &str) -> Option<String> {
     (!name.is_empty() && name.len() < 64).then(|| name.to_string())
 }
 
-/// Reads `"key" : "value"` out of AVS's JSON output.
-///
-/// For routing only; the payload that matters is parsed with serde.
+/// Reads `"key" : "value"` out of AVS's JSON, for routing only; the payload goes through serde.
 fn json_field(text: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let after = &text[text.find(&needle)? + needle.len()..];
 
-    // Only a string value on this key's own line counts; anything else means the key held an
-    // object, a number or nothing.
+    // Only a string value on this key's own line counts.
     let colon = after.find(':')?;
     let value = &after[colon + 1..];
     let line_end = value.find('\n').unwrap_or(value.len());

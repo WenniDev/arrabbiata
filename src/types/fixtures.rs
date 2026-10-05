@@ -1,10 +1,3 @@
-//! A real `usersave` payload, so the parsing path is tested against what the game sends
-//! rather than against a hand-built struct.
-//!
-//! Arrabbiata on DIFFICULT 13, cleared with 11 misses for 877,490 and an EX score of 804.
-//! The identifying fields (`refid`, `ddrcode`, `name`, `client_key`, `token`) are
-//! placeholders; every field the hook reads is verbatim, including the empty `note` slot.
-
 pub const USERSAVE: &str = r#"{
   "eacnet": {
     "request": {

@@ -19,8 +19,7 @@ use windows::core::BOOL;
 pub static CONFIGURATION: LazyLock<Configuration> = LazyLock::new(|| match Configuration::load() {
     Ok(configuration) => configuration,
     Err(err) => {
-        // An unreadable config must not take the game down. Without an API key the defaults
-        // simply leave submission off.
+        // An unreadable config must not take the game down; the defaults leave submission off.
         error!("{err:#}");
         error!("Falling back to the default configuration");
         Configuration::default()
@@ -70,8 +69,7 @@ extern "system" fn DllMain(
                 return TRUE;
             }
 
-            // GRAND PRIX has no avs2-ea3.dll to hang a boot hook on, so the property hook goes
-            // in directly. That relies on being injected once avs2-core.dll is loaded.
+            // No avs2-ea3.dll to hook at boot, so this relies on avs2-core.dll already being loaded.
             if let Err(err) = hook::init() {
                 error!("{err:#}");
             }

@@ -1,11 +1,4 @@
 // Only the entries called here are declared; the generated bindings warn on unused ones.
-// Other AVS property entries present on GRAND PRIX, for when one is needed:
-//
-//   XCgsqzn000009d  property_clear_error
-//   XCgsqzn00000a1  property_search
-//   XCgsqzn00000a7  property_node_name
-//   XCgsqzn00000af  property_node_refer
-//   XCgsqzn00000b7  property_mem_read
 #[crochet::load("avs2-core.dll")]
 extern "C" {
     #[symbol("XCgsqzn000009a")]

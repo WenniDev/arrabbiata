@@ -29,8 +29,7 @@ impl Configuration {
         confy::load_path(CONFIG_FILE).map_err(|err| anyhow::anyhow!("Could not load config: {err}"))
     }
 
-    /// The API key to submit a given player's scores under, or `None` if that player should
-    /// not be submitted at all.
+    /// The API key for a player's scores, or `None` if they should not be submitted.
     pub fn api_key_for(&self, refid: &str) -> Option<&str> {
         self.profiles
             .values()
@@ -66,8 +65,7 @@ pub struct TachiConfiguration {
     pub import: String,
     #[serde(default)]
     pub api_key: Option<String>,
-    /// Tachi has no `grandprix` version for `ddr`. Left unset so Tachi resolves charts
-    /// across versions rather than filing scores under one that was guessed at.
+    /// Left unset so Tachi searches every version for the chart.
     #[serde(default)]
     pub version: Option<String>,
 }
@@ -99,8 +97,7 @@ fn default_timeout() -> u64 {
 }
 
 fn default_base_url() -> String {
-    // Kamaitachi's canonical host. kamaitachi.xyz answers with a 308 to this one, and a
-    // cross-host redirect drops the Authorization header, so it can never authenticate.
+    // kamaitachi.xyz redirects here, and a cross-host redirect drops the Authorization header.
     "https://kamai.tachi.ac/".to_string()
 }
 
@@ -112,8 +109,7 @@ fn default_import_endpoint() -> String {
 mod tests {
     use super::Configuration;
 
-    /// The default config ships inside the DLL through `include_bytes!`, so a typo in it
-    /// surfaces only when a player starts the game.
+    /// The default config ships inside the DLL, so a typo in it only surfaces at startup.
     #[test]
     fn the_shipped_default_parses() {
         let path = std::env::temp_dir().join("arrabbiata-shipped-default.toml");

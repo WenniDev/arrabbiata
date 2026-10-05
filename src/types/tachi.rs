@@ -1,9 +1,4 @@
-//! Tachi's `batch-manual` import format for `ddr`.
-//!
-//! Field names and value sets follow Tachi's own game config
-//! (`typescript/common/src/config/game-support/ddr.ts`) rather than its documentation,
-//! which lists the lamp values in a different order.
-
+// Names and values follow Tachi's game config, not its docs, which order the lamps differently.
 use serde::Serialize;
 
 /// Tachi's lamp enum, in its own order: `LIFE4` sits between `CLEAR` and `FULL COMBO`.
@@ -58,8 +53,7 @@ impl Serialize for Lamp {
     }
 }
 
-/// Tachi's Flare ranks, which `playing_flare` indexes directly: a play cleared at Flare II
-/// sends 2.
+/// Tachi's Flare ranks, which `playing_flare` indexes directly: Flare II sends 2.
 pub const FLARES: [&str; 11] = [
     "0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "EX",
 ];
@@ -84,8 +78,7 @@ pub struct ImportMeta {
     pub game: &'static str,
     pub playtype: &'static str,
     pub service: String,
-    /// Left out so Tachi searches every version for the chart. Its seeds do not tag every
-    /// GRAND PRIX chart as `konaste`, so naming that version loses scores.
+    /// Left out so Tachi searches every version; its seeds do not tag every chart as `konaste`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 }
@@ -126,9 +119,7 @@ pub struct Optional {
     /// Left out for a play without one: Tachi already defaults to Flare 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flare: Option<&'static str>,
-    /// Tachi validates this with `isPositiveInteger`, so a zero is rejected outright and is
-    /// left out instead. It is also `partOfScoreID`, so sending it inconsistently creates
-    /// duplicates rather than updates.
+    /// Zero is rejected by Tachi and left out; it is `partOfScoreID`, so gaps make duplicates.
     #[serde(rename = "exScore", skip_serializing_if = "Option::is_none")]
     pub ex_score: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

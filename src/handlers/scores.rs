@@ -1,8 +1,3 @@
-//! Turning one stage's result into a Tachi score, or refusing to.
-//!
-//! A stage that cannot be fully accounted for is refused rather than submitted on
-//! a guess: a wrong score is worse than a missing one.
-
 use crate::types::game::Note;
 use crate::types::tachi::{DIFFICULTIES, FLARES, ImportScore, Judgements, Lamp, Optional};
 
@@ -78,10 +73,7 @@ fn lamp(clearkind: i32) -> Option<Lamp> {
     }
 }
 
-/// The Flare rank reached, if any.
-///
-/// Flare is optional on Tachi's side and takes no part in a score's identity, so an
-/// unplaceable rank is dropped rather than refusing the score. The caller warns.
+/// The Flare rank reached. An unplaceable rank is dropped rather than refusing the score.
 pub fn flare(note: &Note) -> Option<&'static str> {
     // Nothing to send for a play without a Flare: Tachi already defaults to 0.
     if note.playing_flare <= 0 {
@@ -93,10 +85,7 @@ pub fn flare(note: &Note) -> Option<&'static str> {
         .and_then(|rank| FLARES.get(rank).copied())
 }
 
-/// The chart a `notetype` names: both how it is played and how hard it is.
-///
-/// `notetype` runs straight through both playstyles rather than restarting, and doubles has
-/// no BEGINNER, so the ladder is nine values and not ten.
+/// The chart a `notetype` names: 0-4 singles BEGINNER to CHALLENGE, 5-8 doubles BASIC up.
 fn chart(notetype: i32) -> Option<(&'static str, &'static str)> {
     let (playtype, difficulty) = match notetype {
         0..=4 => ("SP", DIFFICULTIES[notetype as usize]),
@@ -133,8 +122,7 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
     let lamp =
         lamp(note.clearkind).ok_or(Refusal::UnknownClearKind(note.clearkind))?;
 
-    // A full combo means every note was part of the combo, so maxcombo has to equal the
-    // judgements that make one up.
+    // A full combo means maxcombo equals the judgements that make up a combo.
     if lamp.is_full_combo() {
         let expected = note.combo_notes();
         if note.maxcombo != expected {
@@ -369,9 +357,7 @@ mod tests {
         assert!(matches!(convert(&note).err(), Some(Refusal::ComboMismatch { .. })));
     }
 
-    /// Bad Maniacs, DIFFICULT 13: a Great Full Combo with 21 O.K. judgements, which stay out
-    /// of the combo but are still worth 3 each in the EX score:
-    /// (303 + 21) * 3 + 96 * 2 + 18 = 1182.
+    /// Bad Maniacs, DIFFICULT 13: a Great Full Combo whose 21 O.K. count for EX, not combo.
     #[test]
     fn ok_judgements_do_not_count_towards_a_combo() {
         let note = Note {
@@ -422,8 +408,7 @@ mod tests {
         );
     }
 
-    /// 3y3s on EXPERT 17, cleared at Flare II under Floating Flare -- which walks down from
-    /// EX until a rank passes, and reports the one that did.
+    /// 3y3s on EXPERT 17 under Floating Flare, which reports the rank that passed.
     #[test]
     fn a_flare_rank_indexes_tachis_own_ladder() {
         let note = Note {
@@ -477,8 +462,7 @@ mod tests {
 
     #[test]
     fn notetype_names_the_playstyle_as_well_as_the_difficulty() {
-        // BABY BABY GIMME YOUR LOVE on doubles BASIC: notetype 5 at level 3, which is DP
-        // BASIC in Tachi's seeds where SP BASIC is level 2.
+        // BABY BABY GIMME YOUR LOVE on doubles BASIC: notetype 5 at level 3, DP BASIC in the seeds.
         let note = Note {
             stagenum: 1,
             mcode: 182,
@@ -535,8 +519,7 @@ mod tests {
         );
     }
 
-    /// End to end over a captured payload: the game's own JSON in, Tachi's JSON out. Catches
-    /// a serde field name that does not match what the game sends.
+    /// End to end over a captured payload, which catches a serde name the game does not send.
     #[test]
     fn a_captured_payload_becomes_the_expected_tachi_import() {
         use crate::types::fixtures::USERSAVE;

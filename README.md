@@ -12,15 +12,14 @@ Forked from [mikado](https://github.com/adamaq01/mikado), which does the same fo
 ## Installation
 
 - Download the latest release from the [releases page](https://github.com/WenniDev/arrabbiata/releases/latest)
-- Put it in your game's `game\modules` folder, next to `avs2-core.dll`
-- When you start the game, inject the DLL into the process
-- Set your API key in the config file, then restart
+- Rename it to `d3d9.dll` and drop it in the folder holding `ddr-konaste.exe`
+- Start the game once, then set your API key in the config file and restart
 
 ## Tips
 
-- The configuration file is created in the `game` folder at startup if it doesn't already exist
+- Loading other DLLs too? Use [d3d9_chainload](https://github.com/adamaq01/d3d9_chainload)
+- The configuration file is created one folder above the DLL at startup, if it isn't there already
 - Your Tachi API key needs the `submit_score` permission
-- An injector that loads DLLs at startup saves doing it by hand every time
 - Set `enable` to `false` in `arrabbiata.toml` to turn the hook off without removing it
 
 ## License

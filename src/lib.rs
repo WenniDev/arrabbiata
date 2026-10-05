@@ -3,6 +3,7 @@ mod handlers;
 mod helpers;
 mod hook;
 mod log;
+mod proxy;
 mod sys;
 mod types;
 

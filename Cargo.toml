@@ -25,7 +25,7 @@ panic = "abort"
 vergen-gitcl = { version = "10", features = ["build"] }
 
 [dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_SystemServices"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_SystemServices", "Win32_System_LibraryLoader", "Win32_System_SystemInformation"] }
 crochet = "0.2"
 log = "0.4"
 env_logger = "0.11"

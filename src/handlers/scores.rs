@@ -97,6 +97,22 @@ fn chart(notetype: i32) -> Option<(&'static str, &'static str)> {
     Some((playtype, difficulty))
 }
 
+/// Names a play the same way wherever it is logged, naming any value it cannot read.
+pub fn describe(note: &Note) -> String {
+    let lamp = lamp(note.clearkind)
+        .map(Lamp::as_str)
+        .map_or_else(|| format!("clearkind {}", note.clearkind), str::to_owned);
+    let chart = chart(note.notetype).map_or_else(
+        || format!("notetype {}", note.notetype),
+        |(playtype, difficulty)| format!("{playtype} {difficulty}"),
+    );
+
+    format!(
+        "{lamp} {} on {} {chart} {} (mcode {})",
+        note.score, note.basename, note.level, note.mcode
+    )
+}
+
 pub fn convert(note: &Note) -> Result<Converted, Refusal> {
     let (playtype, difficulty) =
         chart(note.notetype).ok_or(Refusal::UnknownNotetype(note.notetype))?;
@@ -174,6 +190,35 @@ pub fn convert(note: &Note) -> Result<Converted, Refusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_play_is_described_the_same_for_either_service() {
+        let note = Note {
+            basename: "afro".to_string(),
+            ..afronova()
+        };
+
+        assert_eq!(
+            describe(&note),
+            "GREAT FULL COMBO 981120 on afro SP BEGINNER 5 (mcode 124)"
+        );
+    }
+
+    /// A play Tachi refuses still goes to Upscore, so its description names what is unknown.
+    #[test]
+    fn an_unreadable_play_is_still_described() {
+        let note = Note {
+            basename: "afro".to_string(),
+            clearkind: 99,
+            notetype: 42,
+            ..afronova()
+        };
+
+        assert_eq!(
+            describe(&note),
+            "clearkind 99 981120 on afro notetype 42 5 (mcode 124)"
+        );
+    }
 
     /// AFRONOVA, BEGINNER 5. Great Full Combo, clearkind 8.
     fn afronova() -> Note {

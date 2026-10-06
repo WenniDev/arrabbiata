@@ -1,5 +1,4 @@
-// Exports d3d9.dll's entry points so the DLL can be renamed d3d9.dll and loaded by the game
-// on its own, with no chainloader. Chainloaded under its own name, these are never called.
+// Forwards d3d9.dll's exports, so renaming this DLL d3d9.dll lets the game load it on its own.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;

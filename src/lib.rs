@@ -6,6 +6,7 @@ mod log;
 mod proxy;
 mod sys;
 mod types;
+mod upscore;
 
 use crate::log::Logger;
 use ::log::{error, info};

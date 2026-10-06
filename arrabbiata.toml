@@ -1,18 +1,19 @@
 [general]
 enable = true        # false installs no hooks at all
-timeout = 3000       # ms
 
 [tachi]
-# kamai.tachi.ac, not kamaitachi.xyz: that one redirects, and a cross-host redirect drops the
-# Authorization header.
 base_url = 'https://kamai.tachi.ac/'
 import = '/ir/direct-manual/import'
 api_key = ''         # required, and needs the submit_score permission
-# Leave version unset, so Tachi looks for the chart in every version. 'konaste' is this game,
-# but Tachi does not tag every chart of it as such, so naming it loses scores.
+timeout = 3000       # ms, how long Tachi may take to answer
 
-# Extra keys per player, for a shared install. A refid appears in the log on that player's
-# first save.
+[upscore]
+url = 'https://hiikvrkmmwmbrxfxihvp.supabase.co/functions/v1/push-plays'
+code = ''           # required, from Upscore
+timeout = 30000     # ms, how long Upscore may take to answer
+
+# Credentials per player, for a shared install. A refid is named in the log when they sign in.
 # [profiles.'someone-else']
 # refids = ['0000001346040870']
-# api_key = 'their-key-here'
+# api_key = 'their-tachi-key'    # leave it out to use [tachi]'s, or set '' to send nothing
+# code = 'their-upscore-code'    # leave it out to use [upscore]'s, or set '' to send nothing

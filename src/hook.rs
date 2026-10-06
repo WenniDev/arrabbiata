@@ -9,7 +9,7 @@ use crate::handlers::scores;
 use crate::sys::{property_mem_write, property_query_size, property_set_flag};
 use crate::types::game::{Envelope, Note};
 use crate::types::tachi::{Import, ImportMeta};
-use crate::{CONFIGURATION, TACHI_IMPORT_URL, helpers};
+use crate::{CONFIGURATION, TACHI_IMPORT_URL, helpers, upscore};
 
 /// Setting 0x800 and clearing 0x008 switches AVS's output to JSON; `serialize` restores both.
 const FLAG_JSON: u32 = 0x800;
@@ -18,8 +18,15 @@ const FLAG_KBIN: u32 = 0x008;
 /// Above this nothing is read: a save is tens of kilobytes, the music database near a megabyte.
 const MAX_SIZE: usize = 1024 * 1024;
 
+/// How long to follow a queued import, which Tachi usually runs in well under a second.
+const POLL_ATTEMPTS: u32 = 20;
+const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// A stage is saved twice, so this only has to outlive one session's worth of stages.
 const RECENT_PLAYS: usize = 32;
+
+/// A session has a player or two; this only bounds a stream of refids nobody expected.
+const KNOWN_PLAYERS: usize = 8;
 
 static SEEN: AtomicU64 = AtomicU64::new(0);
 static SUBMITTED: AtomicU64 = AtomicU64::new(0);
@@ -29,6 +36,9 @@ static REFUSED: AtomicU64 = AtomicU64::new(0);
 type PlayId = (u32, i32, i64);
 
 static RECENT: Mutex<Vec<PlayId>> = Mutex::new(Vec::new());
+
+/// Refids already named in the log, so each player is announced once a session.
+static ANNOUNCED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 thread_local! {
     /// Serializing a property re-enters the hook; without this guard the first read recurses.
@@ -43,12 +53,16 @@ pub fn init() -> Result<()> {
         )
     })?;
 
-    let no_key = CONFIGURATION.tachi.api_key.as_deref().unwrap_or("").is_empty()
-        && CONFIGURATION.profiles.is_empty();
-    if no_key {
-        warn!("No Tachi API key is set, so nothing will be submitted. Edit arrabbiata.toml");
+    if CONFIGURATION.has_api_key() {
+        info!("Sending scores to Tachi at {}", TACHI_IMPORT_URL.as_str());
     } else {
-        info!("Submitting scores to {}", TACHI_IMPORT_URL.as_str());
+        warn!("No Tachi API key is set, so no score goes there. Edit arrabbiata.toml");
+    }
+
+    if CONFIGURATION.has_upscore_code() {
+        info!("Sending scores to Upscore at {}", CONFIGURATION.upscore.url);
+    } else {
+        warn!("No Upscore code is set, so no score goes there. Edit arrabbiata.toml");
     }
 
     Ok(())
@@ -56,9 +70,10 @@ pub fn init() -> Result<()> {
 
 pub fn release() -> Result<()> {
     info!(
-        "Seen {} properties; submitted {} scores, refused {}",
+        "Seen {} properties; Tachi took {}, Upscore took {}, refused {}",
         SEEN.load(Ordering::Relaxed),
         SUBMITTED.load(Ordering::Relaxed),
+        upscore::sent(),
         REFUSED.load(Ordering::Relaxed)
     );
 
@@ -93,15 +108,44 @@ unsafe fn capture(property: *mut ()) {
     };
     let text = String::from_utf8_lossy(&json);
 
-    let is_usersave = root_name(&text).as_deref() == Some("eacnet")
-        && json_field(&text, "method").as_deref() == Some("usergamedata_advanced")
-        && json_field(&text, "mode").as_deref() == Some("usersave");
+    // Only player data names the refid that [profiles] match, so only it may announce one.
+    let is_player_data = root_name(&text).as_deref() == Some("eacnet")
+        && json_field(&text, "method").as_deref() == Some("usergamedata_advanced");
 
-    if is_usersave {
+    if is_player_data {
+        announce(&text);
+    }
+
+    if is_player_data && json_field(&text, "mode").as_deref() == Some("usersave") {
         handle_usersave(&json);
     }
 
     CAPTURING.with(|flag| flag.set(false));
+}
+
+/// Names a refid once a session. The game loads player data four ways, each under its own.
+fn announce(text: &str) {
+    let Some(refid) = json_field(text, "refid").filter(|refid| !refid.is_empty()) else {
+        return;
+    };
+
+    debug!(
+        "Player data for refid {refid}, mode '{}'",
+        json_field(text, "mode").unwrap_or_default()
+    );
+
+    let mut announced = ANNOUNCED.lock().unwrap_or_else(|err| err.into_inner());
+    if announced.contains(&refid) {
+        return;
+    }
+
+    if announced.len() >= KNOWN_PLAYERS {
+        announced.remove(0);
+    }
+    announced.push(refid.clone());
+
+    // Only a save names the refid that picks the credentials, so this passes no judgement.
+    info!("Refid {refid} signed in");
 }
 
 /// Parses a save and submits what it carries; failures are logged and dropped, never raised.
@@ -136,13 +180,17 @@ fn handle_usersave(json: &[u8]) {
         return;
     }
 
-    let Some(api_key) = CONFIGURATION.api_key_for(&save.refid) else {
+    // Upscore runs whether or not a Tachi key is configured: the two outputs are independent.
+    let api_key = CONFIGURATION.api_key_for(&save.refid);
+    let upscore_code = CONFIGURATION.upscore_code_for(&save.refid);
+
+    // A save nothing covers must still say so: silence reads as a hook that is not working.
+    if api_key.is_none() && upscore_code.is_none() {
         warn!(
-            "No API key covers refid {}, so its scores are not submitted",
+            "Nothing covers refid {}, so this save goes nowhere. Put it in a [profiles] entry",
             save.refid
         );
-        return;
-    };
+    }
 
     debug!(
         "Save from {} (ddrcode {}, refid {}) on {}, at game over: {}",
@@ -160,7 +208,16 @@ fn handle_usersave(json: &[u8]) {
             continue;
         }
 
-        submit(note, api_key);
+        // One description for both, so the same play reads the same whoever reports on it.
+        let summary = scores::describe(note);
+
+        if let Some(code) = upscore_code {
+            upscore::send(note, &summary, code);
+        }
+
+        if let Some(api_key) = api_key {
+            submit(note, api_key, &summary);
+        }
     }
 }
 
@@ -181,15 +238,12 @@ fn claim(note: &Note) -> bool {
     true
 }
 
-fn submit(note: &Note, api_key: &str) {
+fn submit(note: &Note, api_key: &str, summary: &str) {
     let converted = match scores::convert(note) {
         Ok(converted) => converted,
         Err(refusal) => {
             REFUSED.fetch_add(1, Ordering::Relaxed);
-            error!(
-                "Refusing to submit mcode {} ({}): {refusal}",
-                note.mcode, note.basename
-            );
+            error!("Refusing to send {summary} to Tachi: {refusal}");
             return;
         }
     };
@@ -213,36 +267,88 @@ fn submit(note: &Note, api_key: &str) {
         scores: vec![converted.score],
     };
 
-    let summary = format!(
-        "{} {} on {} {} {} {} (mcode {})",
-        import.scores[0].lamp,
-        import.scores[0].score,
-        note.basename,
-        import.meta.playtype,
-        import.scores[0].difficulty,
-        note.level,
-        note.mcode
-    );
     let api_key = api_key.to_string();
+    let summary = summary.to_string();
 
     // A blocking POST would show up as a stall on the save screen.
-    std::thread::spawn(move || match helpers::post(&TACHI_IMPORT_URL, &api_key, &import) {
-        Ok(response) => {
-            if response.get("success").and_then(|v| v.as_bool()) == Some(false) {
-                error!(
-                    "Tachi rejected {summary}: {}",
-                    response
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("no reason given")
-                );
-            } else {
-                SUBMITTED.fetch_add(1, Ordering::Relaxed);
-                info!("Submitted {summary}");
+    std::thread::spawn(move || {
+        let response = match helpers::post(&TACHI_IMPORT_URL, &api_key, &import) {
+            Ok(response) => response,
+            Err(err) => {
+                error!("Could not reach Tachi for {summary}: {err:#}");
+                return;
             }
+        };
+
+        if response.get("success").and_then(|v| v.as_bool()) == Some(false) {
+            error!(
+                "Tachi refused {summary}: {}",
+                response
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("no reason given")
+            );
+            return;
         }
-        Err(err) => error!("Could not submit {summary}: {err:#}"),
+
+        match finished_import(&response) {
+            Ok(document) => report(&summary, &document),
+            Err(err) => warn!("Tachi queued {summary}, but never said what it did: {err:#}"),
+        }
     });
+}
+
+/// Waits for a queued import to run, since accepting one says nothing about importing it.
+fn finished_import(response: &serde_json::Value) -> Result<serde_json::Value> {
+    let Some(url) = response.pointer("/body/url").and_then(|v| v.as_str()) else {
+        // An import Tachi ran on the spot answers with the document itself.
+        return Ok(response.get("body").cloned().unwrap_or_default());
+    };
+
+    for _ in 0..POLL_ATTEMPTS {
+        let polled = helpers::get(url)?;
+
+        if polled.get("success").and_then(|v| v.as_bool()) == Some(false) {
+            anyhow::bail!(
+                "{}",
+                polled
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("no reason given")
+            );
+        }
+
+        if polled.pointer("/body/importStatus").and_then(|v| v.as_str()) == Some("completed") {
+            return polled
+                .pointer("/body/import")
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("a completed import carried no document"));
+        }
+
+        std::thread::sleep(POLL_INTERVAL);
+    }
+
+    anyhow::bail!("still queued after {POLL_ATTEMPTS} polls")
+}
+
+/// Logs what Tachi made of the score. No error and no score means it already had it.
+fn report(summary: &str, document: &serde_json::Value) {
+    if let Some(message) = document.pointer("/errors/0/message").and_then(|v| v.as_str()) {
+        error!("Tachi could not import {summary}: {message}");
+        return;
+    }
+
+    let kept = document
+        .get("scoreIDs")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+
+    if kept == 0 {
+        info!("Tachi already had {summary}");
+    } else {
+        SUBMITTED.fetch_add(1, Ordering::Relaxed);
+        info!("Tachi took {summary}");
+    }
 }
 
 /// Serializes the property as JSON.
@@ -337,6 +443,14 @@ mod tests {
             Some("usergamedata_advanced")
         );
         assert_eq!(json_field(SAVE, "mode").as_deref(), Some("usersave"));
+    }
+
+    /// The refid is what names a player in the log and picks their key out of [profiles].
+    #[test]
+    fn reads_the_refid_a_request_carries() {
+        assert_eq!(json_field(SAVE, "refid").as_deref(), Some("ABCD0123"));
+        // A request without one, such as a shop lookup, must name nobody.
+        assert_eq!(json_field(r#"{"eacnet" : {"refid" : ""}}"#, "refid"), None);
     }
 
     #[test]

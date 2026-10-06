@@ -116,8 +116,12 @@ pub struct Note {
     pub judge_miss: i64,
     #[serde(default)]
     pub judge_ok: i64,
-    // `judge_boo` and `judge_ng` are also present, and always zero. Not modelled.
-
+    /// Always zero in practice, but the Upscore payload carries it.
+    #[serde(default)]
+    pub judge_boo: i64,
+    /// Failed freeze arrows. Also always zero, and also in the Upscore payload.
+    #[serde(default)]
+    pub judge_ng: i64,
     /// 0 is SINGLE, 1 is DOUBLE.
     #[serde(default)]
     pub playstyle: i32,
@@ -128,6 +132,12 @@ pub struct Note {
     pub endtime: i64,
     #[serde(default)]
     pub basename: String,
+    /// The song title, base64-encoded UTF-8.
+    #[serde(default)]
+    pub title_b64: String,
+    /// The artist, base64-encoded UTF-8.
+    #[serde(default)]
+    pub artist_b64: String,
 }
 
 impl Note {

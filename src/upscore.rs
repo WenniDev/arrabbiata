@@ -49,18 +49,18 @@ fn result_from(note: &Note) -> MusicResult {
 }
 
 /// Sends one play on its own thread, so the game is not waiting on the request.
-pub fn send(note: &Note, summary: &str, code: &str) {
+pub fn send(note: &Note, summary: &str, api_key: &str) {
     let page = Page {
         total_items: 1,
         items: vec![result_from(note)],
     };
     let url = CONFIGURATION.upscore.url.clone();
-    let code = code.to_string();
+    let api_key = api_key.to_string();
     let summary = summary.to_string();
 
-    std::thread::spawn(move || match helpers::post_for_outcome(&url, &code, &page) {
+    std::thread::spawn(move || match helpers::post_for_outcome(&url, &api_key, &page) {
         Ok((200, body)) => report(&summary, &body),
-        Ok((401, _)) => error!("Upscore refused the code: check upscore.code in arrabbiata.toml"),
+        Ok((401, _)) => error!("Upscore refused the key: check upscore.api_key in arrabbiata.toml"),
         Ok((429, _)) => warn!("Upscore is over its hourly limit, so it did not take {summary}"),
         Ok((502, _)) => warn!("Upscore could not score {summary}, which is worth retrying"),
         Ok((status, body)) => {

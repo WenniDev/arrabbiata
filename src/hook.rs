@@ -53,16 +53,16 @@ pub fn init() -> Result<()> {
         )
     })?;
 
-    if CONFIGURATION.has_api_key() {
+    if CONFIGURATION.has_tachi_api_key() {
         info!("Sending scores to Tachi at {}", TACHI_IMPORT_URL.as_str());
     } else {
         warn!("No Tachi API key is set, so no score goes there. Edit arrabbiata.toml");
     }
 
-    if CONFIGURATION.has_upscore_code() {
+    if CONFIGURATION.has_upscore_api_key() {
         info!("Sending scores to Upscore at {}", CONFIGURATION.upscore.url);
     } else {
-        warn!("No Upscore code is set, so no score goes there. Edit arrabbiata.toml");
+        warn!("No Upscore API key is set, so no score goes there. Edit arrabbiata.toml");
     }
 
     Ok(())
@@ -181,11 +181,11 @@ fn handle_usersave(json: &[u8]) {
     }
 
     // Upscore runs whether or not a Tachi key is configured: the two outputs are independent.
-    let api_key = CONFIGURATION.api_key_for(&save.refid);
-    let upscore_code = CONFIGURATION.upscore_code_for(&save.refid);
+    let tachi_api_key = CONFIGURATION.tachi_api_key_for(&save.refid);
+    let upscore_api_key = CONFIGURATION.upscore_api_key_for(&save.refid);
 
     // A save nothing covers must still say so: silence reads as a hook that is not working.
-    if api_key.is_none() && upscore_code.is_none() {
+    if tachi_api_key.is_none() && upscore_api_key.is_none() {
         warn!(
             "Nothing covers refid {}, so this save goes nowhere. Put it in a [profiles] entry",
             save.refid
@@ -211,11 +211,11 @@ fn handle_usersave(json: &[u8]) {
         // One description for both, so the same play reads the same whoever reports on it.
         let summary = scores::describe(note);
 
-        if let Some(code) = upscore_code {
-            upscore::send(note, &summary, code);
+        if let Some(api_key) = upscore_api_key {
+            upscore::send(note, &summary, api_key);
         }
 
-        if let Some(api_key) = api_key {
+        if let Some(api_key) = tachi_api_key {
             submit(note, api_key, &summary);
         }
     }

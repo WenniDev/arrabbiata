@@ -44,37 +44,37 @@ impl Configuration {
     }
 
     /// The Tachi key for a player's scores, or `None` if they should not be submitted.
-    pub fn api_key_for(&self, refid: &str) -> Option<&str> {
+    pub fn tachi_api_key_for(&self, refid: &str) -> Option<&str> {
         self.profile_for(refid)
-            .and_then(|profile| profile.api_key.as_deref())
+            .and_then(|profile| profile.tachi_api_key.as_deref())
             .or(self.tachi.api_key.as_deref())
             .filter(|key| !key.is_empty())
     }
 
-    /// The Upscore code for a player's plays, or `None` if they should not be sent.
-    pub fn upscore_code_for(&self, refid: &str) -> Option<&str> {
+    /// The Upscore key for a player's plays, or `None` if they should not be sent.
+    pub fn upscore_api_key_for(&self, refid: &str) -> Option<&str> {
         self.profile_for(refid)
-            .and_then(|profile| profile.code.as_deref())
-            .or(self.upscore.code())
-            .filter(|code| !code.is_empty())
+            .and_then(|profile| profile.upscore_api_key.as_deref())
+            .or(self.upscore.api_key())
+            .filter(|key| !key.is_empty())
     }
 
     /// Whether any player's scores can reach Tachi, for what the hook reports at startup.
-    pub fn has_api_key(&self) -> bool {
+    pub fn has_tachi_api_key(&self) -> bool {
         filled(self.tachi.api_key.as_deref())
             || self
                 .profiles
                 .values()
-                .any(|profile| filled(profile.api_key.as_deref()))
+                .any(|profile| filled(profile.tachi_api_key.as_deref()))
     }
 
     /// Whether any player's plays can reach Upscore.
-    pub fn has_upscore_code(&self) -> bool {
-        filled(self.upscore.code())
+    pub fn has_upscore_api_key(&self) -> bool {
+        filled(self.upscore.api_key())
             || self
                 .profiles
                 .values()
-                .any(|profile| filled(profile.code.as_deref()))
+                .any(|profile| filled(profile.upscore_api_key.as_deref()))
     }
 }
 
@@ -117,15 +117,16 @@ impl Default for TachiConfiguration {
     }
 }
 
-/// A player's own credentials. Omitting one falls back to the section above, `''` sends nothing.
+/// A player's own keys. Omitting one falls back to the section above, `''` sends nothing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProfileConfiguration {
     #[serde(default)]
     pub refids: Vec<String>,
+    // Both are spelled out: a profile holds one key per service, so `api_key` alone is ambiguous.
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub tachi_api_key: Option<String>,
     #[serde(default)]
-    pub code: Option<String>,
+    pub upscore_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,16 +134,16 @@ pub struct UpscoreConfiguration {
     #[serde(default = "default_upscore_url")]
     pub url: String,
     #[serde(default)]
-    pub code: Option<String>,
+    pub api_key: Option<String>,
     /// Longer than Tachi's: Upscore scores the play before it answers, which takes seconds.
     #[serde(default = "default_upscore_timeout")]
     pub timeout: u64,
 }
 
 impl UpscoreConfiguration {
-    /// The upload code, or `None` when it is unset or blank.
-    pub fn code(&self) -> Option<&str> {
-        self.code.as_deref().filter(|code| !code.is_empty())
+    /// The upload key, or `None` when it is unset or blank.
+    pub fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref().filter(|key| !key.is_empty())
     }
 }
 
@@ -150,7 +151,7 @@ impl Default for UpscoreConfiguration {
     fn default() -> Self {
         Self {
             url: default_upscore_url(),
-            code: None,
+            api_key: None,
             timeout: default_upscore_timeout(),
         }
     }
@@ -200,21 +201,21 @@ mod tests {
             api_key = 'house-key'
 
             [upscore]
-            code = 'house-code'
+            api_key = 'house-upscore-key'
 
             [profiles.'flatmate']
             refids = ['0000001346040870', '0000009999999999']
-            api_key = 'flatmate-key'
-            code = 'flatmate-code'
+            tachi_api_key = 'flatmate-tachi-key'
+            upscore_api_key = 'flatmate-upscore-key'
 
             [profiles.'guest']
             refids = ['0000005555555555']
-            api_key = ''
-            code = ''
+            tachi_api_key = ''
+            upscore_api_key = ''
 
             [profiles.'tachi-only']
             refids = ['0000007777777777']
-            code = ''
+            upscore_api_key = ''
             ",
         )
         .unwrap();
@@ -230,55 +231,55 @@ mod tests {
     fn a_refid_picks_the_key_it_belongs_to() {
         let config = profiles();
 
-        assert_eq!(config.api_key_for("0000001346040870"), Some("flatmate-key"));
-        assert_eq!(config.api_key_for("0000009999999999"), Some("flatmate-key"));
+        let key = |refid| config.tachi_api_key_for(refid);
+
+        assert_eq!(key("0000001346040870"), Some("flatmate-tachi-key"));
+        assert_eq!(key("0000009999999999"), Some("flatmate-tachi-key"));
         // Any refid no profile claims falls back to the key under [tachi].
-        assert_eq!(config.api_key_for("0000001111111111"), Some("house-key"));
+        assert_eq!(key("0000001111111111"), Some("house-key"));
         // A blank key in a profile is an opt-out, even with a global key set.
-        assert_eq!(config.api_key_for("0000005555555555"), None);
+        assert_eq!(key("0000005555555555"), None);
         // A profile that leaves the key out borrows the one under [tachi].
-        assert_eq!(config.api_key_for("0000007777777777"), Some("house-key"));
+        assert_eq!(key("0000007777777777"), Some("house-key"));
     }
 
-    /// The Upscore code follows the same rules, so one install can serve two accounts.
+    /// The Upscore key follows the same rules, so one install can serve two accounts.
     #[test]
-    fn a_refid_picks_the_code_it_belongs_to() {
+    fn a_refid_picks_the_upscore_key_it_belongs_to() {
         let config = profiles();
+        let key = |refid| config.upscore_api_key_for(refid);
 
-        assert_eq!(
-            config.upscore_code_for("0000001346040870"),
-            Some("flatmate-code")
-        );
-        assert_eq!(config.upscore_code_for("0000001111111111"), Some("house-code"));
-        assert_eq!(config.upscore_code_for("0000005555555555"), None);
+        assert_eq!(key("0000001346040870"), Some("flatmate-upscore-key"));
+        assert_eq!(key("0000001111111111"), Some("house-upscore-key"));
+        assert_eq!(key("0000005555555555"), None);
         // This player is submitted to Tachi on the house key, but sends nothing to Upscore.
-        assert_eq!(config.upscore_code_for("0000007777777777"), None);
+        assert_eq!(key("0000007777777777"), None);
     }
 
     /// Both are reported at startup, so neither may read as set when only profiles hold one.
     #[test]
     fn credentials_count_wherever_they_are_set() {
         let config = profiles();
-        assert!(config.has_api_key());
-        assert!(config.has_upscore_code());
+        assert!(config.has_tachi_api_key());
+        assert!(config.has_upscore_api_key());
 
-        assert!(!Configuration::default().has_api_key());
-        assert!(!Configuration::default().has_upscore_code());
+        assert!(!Configuration::default().has_tachi_api_key());
+        assert!(!Configuration::default().has_upscore_api_key());
 
         let only_in_a_profile = Configuration {
             profiles: HashMap::from([(
                 "them".to_string(),
                 ProfileConfiguration {
                     refids: vec!["0000001346040870".to_string()],
-                    code: Some("their-code".to_string()),
+                    upscore_api_key: Some("their-upscore-key".to_string()),
                     ..ProfileConfiguration::default()
                 },
             )]),
             ..Configuration::default()
         };
 
-        assert!(!only_in_a_profile.has_api_key());
-        assert!(only_in_a_profile.has_upscore_code());
+        assert!(!only_in_a_profile.has_tachi_api_key());
+        assert!(only_in_a_profile.has_upscore_api_key());
     }
 
     /// The default config ships inside the DLL, so a typo in it only surfaces at startup.
@@ -293,11 +294,11 @@ mod tests {
         assert!(config.general.enable);
         assert_eq!(config.tachi.base_url, "https://kamai.tachi.ac/");
         // Out of the box there is no key, so nothing is submitted.
-        assert_eq!(config.api_key_for("0000001346040870"), None);
+        assert_eq!(config.tachi_api_key_for("0000001346040870"), None);
         // Unset, so Tachi matches charts across versions.
         assert_eq!(config.tachi.version, None);
-        // The blank code in the shipped file must read as absent, not as an empty token.
-        assert_eq!(config.upscore.code(), None);
+        // The blank key in the shipped file must read as absent, not as an empty token.
+        assert_eq!(config.upscore.api_key(), None);
         // Each service waits on its own clock, and Upscore needs by far the longer one.
         assert_eq!(config.tachi.timeout, 3000);
         assert_eq!(config.upscore.timeout, 30000);

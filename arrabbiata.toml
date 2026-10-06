@@ -9,11 +9,11 @@ timeout = 3000       # ms, how long Tachi may take to answer
 
 [upscore]
 url = 'https://hiikvrkmmwmbrxfxihvp.supabase.co/functions/v1/push-plays'
-code = ''           # required, from Upscore
+api_key = ''        # required, from Upscore
 timeout = 30000     # ms, how long Upscore may take to answer
 
 # Credentials per player, for a shared install. A refid is named in the log when they sign in.
 # [profiles.'someone-else']
 # refids = ['0000001346040870']
-# api_key = 'their-tachi-key'    # leave it out to use [tachi]'s, or set '' to send nothing
-# code = 'their-upscore-code'    # leave it out to use [upscore]'s, or set '' to send nothing
+# tachi_api_key = 'theirs'       # leave it out to use [tachi]'s, or set '' to send nothing
+# upscore_api_key = 'theirs'     # leave it out to use [upscore]'s, or set '' to send nothing

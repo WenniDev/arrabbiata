@@ -71,7 +71,7 @@ pub fn get(url: &str) -> Result<serde_json::Value> {
 }
 
 /// POSTs to Upscore, which answers the outcome in the status and a JSON tally, not in `success`.
-pub fn post_for_outcome<T>(url: &str, code: &str, body: &T) -> Result<(u16, serde_json::Value)>
+pub fn post_for_outcome<T>(url: &str, api_key: &str, body: &T) -> Result<(u16, serde_json::Value)>
 where
     T: Serialize + Debug,
 {
@@ -80,7 +80,7 @@ where
     let request = ureq::http::Request::builder()
         .method("POST")
         .uri(url)
-        .header("Authorization", format!("Bearer {code}"))
+        .header("Authorization", format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
         .body(serde_json::to_vec(body)?)?;
 
